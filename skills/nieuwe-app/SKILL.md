@@ -66,7 +66,7 @@ echte gegevens raakt. Dat kost per app vrijwel niets.
   en bestanden inricht, en dan is de app van het bedrijf en niet van één persoon. Is er geen
   organisatie, zeg dan dat Stage Two die eerst moet aanmaken, en stop hier.
 - **Wie erbij mag.** Lees de groepen uit de toegangslijst:
-  `gh api repos/<eigenaar>/stagetwo-beheer/contents/toegang.json -H "Accept: application/vnd.github.raw"`
+  `gh api repos/<beheer-repo>/contents/toegang.json -H "Accept: application/vnd.github.raw"`, met als beheer-repo `<eigenaar>/stagetwo-beheer-light` als die bestaat, anders `<eigenaar>/stagetwo-beheer`
   (bestaat die niet, dan heet de beheer-repo nog `stack-beheer`: gebruik dan die naam).
   Staat de naam van de app al onder `apps`, dan is dit al geregeld; zeg dat. Zo niet, toon
   dan de groepen (met wie erin zit, in gewone woorden) en laat de gebruiker kiezen. Zijn
@@ -118,7 +118,7 @@ hier niet zelf aan.
 
 De Worker, de deur (Access), de databases (D1) en de bestanden (R2), voor productie en voor
 de previews, worden ingericht door de workflow **App inrichten** in de beheer-repo van de
-organisatie (`<eigenaar>/stagetwo-beheer`, bij oudere klanten nog `stack-beheer`), op
+organisatie (`<eigenaar>/stagetwo-beheer-light` als de organisatie twee sporen heeft, anders `<eigenaar>/stagetwo-beheer`; het script kiest zelf en neemt alleen een beheer-repo van het lichte spoor), op
 GitHub. Daar staan alle sleutels; op deze computer komt bewust geen Cloudflare-toegang.
 Probeer dat nooit zelf te doen, ook niet als `wrangler` op deze computer staat.
 

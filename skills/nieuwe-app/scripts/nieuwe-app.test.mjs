@@ -367,8 +367,18 @@ test("regelOmgevingen: maakt ontbrekende omgevingen aan en laat andere omgevinge
   assert.ok(!gh.log.some((r) => r.startsWith("DELETE repos/Org/app/environments/eigen-omgeving")));
 });
 
-test("kiesBeheerRepo: eerst stagetwo-beheer, dan de oude naam stack-beheer, anders null", () => {
-  assert.equal(kiesBeheerRepo("klant", (r) => r === "klant/stagetwo-beheer" || r === "klant/stack-beheer"), "klant/stagetwo-beheer");
-  assert.equal(kiesBeheerRepo("klant", (r) => r === "klant/stack-beheer"), "klant/stack-beheer");
-  assert.equal(kiesBeheerRepo("klant", () => false), null);
+test("kiesBeheerRepo: eerst stagetwo-beheer-light, dan stagetwo-beheer, dan stack-beheer; alleen een light-beheer-repo telt", () => {
+  const er = (...repos) => (r) => repos.includes(r);
+  const light = (...repos) => (r) => repos.includes(r);
+  // Stage Two zelf: twee sporen in één organisatie, de light-repo gaat voor.
+  assert.equal(
+    kiesBeheerRepo("org", er("org/stagetwo-beheer", "org/stagetwo-beheer-light"), light("org/stagetwo-beheer-light")),
+    "org/stagetwo-beheer-light",
+  );
+  // Een light-klant met één beheer-repo.
+  assert.equal(kiesBeheerRepo("klant", er("klant/stagetwo-beheer"), light("klant/stagetwo-beheer")), "klant/stagetwo-beheer");
+  assert.equal(kiesBeheerRepo("klant", er("klant/stack-beheer"), light("klant/stack-beheer")), "klant/stack-beheer");
+  // Alleen een beheer-repo van het Cloudflare+Supabase-spoor: niet gebruiken.
+  assert.equal(kiesBeheerRepo("org", er("org/stagetwo-beheer"), light()), null);
+  assert.equal(kiesBeheerRepo("klant", () => false, () => true), null);
 });

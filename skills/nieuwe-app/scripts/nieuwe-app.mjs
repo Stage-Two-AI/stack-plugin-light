@@ -404,15 +404,33 @@ function isKloonVan(map, repo) {
 
 // ---------------------------------------------------------------- inrichten
 
-// De beheer-repo heet sinds 13-10-2026 `stagetwo-beheer`. Klanten die eerder zijn aangesloten
-// hebben nog `stack-beheer`; die naam blijft werken tot ook daar de repo is hernoemd.
+// De beheer-repo van een light-klant heet `stagetwo-beheer`. Heeft een organisatie twee sporen
+// (Stage Two zelf: de Cloudflare+Supabase-apps en de privé-apps), dan heet de light-repo
+// `stagetwo-beheer-light`; die gaat voor. `stack-beheer` is de oude naam (vóór 13-10-2026).
+export const BEHEER_REPO_LIGHT = "stagetwo-beheer-light";
 export const BEHEER_REPO = "stagetwo-beheer";
 export const BEHEER_REPO_OUD = "stack-beheer";
+/** Aan dit bestand herken je een beheer-repo van het lichte spoor (uit stack-beheer, klant-light/). */
+export const LIGHT_KENMERK = "beheer/inrichten-light.mjs";
 
-/** De beheer-repo van `eigenaar`: eerst de nieuwe naam, dan de oude, anders null. */
-export function kiesBeheerRepo(eigenaar, bestaat = repoBestaat) {
-  for (const naam of [BEHEER_REPO, BEHEER_REPO_OUD]) {
-    if (bestaat(`${eigenaar}/${naam}`)) return `${eigenaar}/${naam}`;
+function heeftBestand(repo, pad) {
+  try {
+    sh("gh", ["api", `repos/${repo}/contents/${pad}`, "-q", ".path"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * De light-beheer-repo van `eigenaar`, of null. Alleen een repo met de inrichting van het
+ * lichte spoor telt: een beheer-repo van het Cloudflare+Supabase-spoor zou een Supabase-
+ * project gaan maken.
+ */
+export function kiesBeheerRepo(eigenaar, bestaat = repoBestaat, isLight = (r) => heeftBestand(r, LIGHT_KENMERK)) {
+  for (const naam of [BEHEER_REPO_LIGHT, BEHEER_REPO, BEHEER_REPO_OUD]) {
+    const repo = `${eigenaar}/${naam}`;
+    if (bestaat(repo) && isLight(repo)) return repo;
   }
   return null;
 }

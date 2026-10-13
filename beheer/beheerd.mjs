@@ -3,7 +3,7 @@
  * De beheerde run van Stage Two: gaat het register van projecten langs en brengt wie
  * achterloopt naar de nieuwste template, als pull request van `Stage Two stack-sync`.
  * Dit is Christijns overzicht en noodrem; de gewone weg is dat de klant zelf
- * /stack-cloudflare:updaten draait (KTD2). Dezelfde kern (lib/), dus hetzelfde gedrag.
+ * /stack-light:updaten draait (KTD2). Dezelfde kern (lib/), dus hetzelfde gedrag.
  *
  * Dit is geen skill en geen commando van de plugin: het staat onder beheer/ (niet
  * bin/, want die map zet Claude Code op het PATH van elke sessie) en wordt gestart
@@ -48,6 +48,7 @@ import {
   sluitOuderePRs,
   templateRepo,
 } from "../lib/repo.mjs";
+import { isLightManifest } from "../lib/manifest.mjs";
 import { leesVersie, pasToe } from "../lib/toepassen.mjs";
 
 export const AFZENDER = "beheerd";
@@ -182,7 +183,7 @@ export function verwerk({ project, werkmap, tmplMap, doelVersie, rulesetPad, opt
 
   if (versie === null || versie >= doelVersie) return "niets";
   if (route === "plugin") {
-    log(`  ${grijs("route plugin: de klant haalt dit zelf op met /stack-cloudflare:updaten; geen PR van Stage Two")}`);
+    log(`  ${grijs("route plugin: de klant haalt dit zelf op met /stack-light:updaten; geen PR van Stage Two")}`);
     return "overgeslagen";
   }
   if (bijwerkPR) {
@@ -201,6 +202,20 @@ export function verwerk({ project, werkmap, tmplMap, doelVersie, rulesetPad, opt
     return "gestopt";
   }
   if (project.soort === "template") return spiegel({ repo, map, tmplMap, branch, versie, doelVersie, doeHet: opties.doeHet, log });
+
+  // Alleen apps van het lichte spoor: een app van het Vercel-spoor of van Cloudflare +
+  // Supabase die per ongeluk in dit register staat, krijgt nooit bestanden van deze template.
+  let manifest = null;
+  try {
+    manifest = JSON.parse(readFileSync(join(map, ".claude", "stack-manifest.json"), "utf8"));
+  } catch {
+    manifest = null;
+  }
+  if (!isLightManifest(manifest)) {
+    const variant = manifest?.variant ?? "geen (Vercel-spoor)";
+    log(`  ${rood("x OVERGESLAGEN")}: dit is geen light-app (variant ${variant}); haal hem uit dit register`);
+    return "ander-spoor";
+  }
 
   maakBranch(map, branch);
   const resultaat = pasToe({ map, tmplMap, git: gitVoorKern(map, tmplMap), pnpm: pnpmVoorKern() });

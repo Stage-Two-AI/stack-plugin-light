@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Het script achter het templatedeel van /stack-cloudflare:updaten: brengt de app van de klant naar de nieuwste
+ * Het script achter het templatedeel van /stack-light:updaten: brengt de app van de klant naar de nieuwste
  * versie van de Stage Two-template, als pull request van de klant zelf. Twee aanroepen
  * per ronde (KTD9), allebei vanuit de open checkout van de klant:
  *
@@ -36,7 +36,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statS
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isCloudflareManifest, leesManifest, toegestaan as toegestaneBestandenVan } from "../../../lib/manifest.mjs";
+import { isLightManifest, leesManifest, toegestaan as toegestaneBestandenVan } from "../../../lib/manifest.mjs";
 import { BEVESTIGING, branchNaam, prTekst, prTitel, sluitTekst } from "../../../lib/pr-tekst.mjs";
 import {
   alGelijkOpGitHub,
@@ -160,16 +160,26 @@ function isTemplateApp(map) {
   return existsSync(join(map, MANIFEST_PAD)) && leesVersie(map) !== null;
 }
 
-const ANDER_SPOOR = {
-  status: "ander-spoor",
-  reden: "deze app komt uit de Vercel-template van Stage Two; die werk je bij met /stack:updaten van de andere Stage Two-plugin, niet met deze",
-};
+/**
+ * Een app van een ander spoor: zeg welke plugin hem wel bijwerkt. Geen `variant` is het
+ * Vercel-spoor, `"cloudflare"` het spoor met Cloudflare en Supabase.
+ */
+export function anderSpoor(manifest) {
+  const variant = manifest && typeof manifest === "object" ? manifest.variant : undefined;
+  const reden =
+    variant === "cloudflare"
+      ? "deze app komt uit de Cloudflare-template van Stage Two (met Supabase); die werk je bij met /stack-cloudflare:updaten van de andere Stage Two-plugin, niet met deze"
+      : variant === undefined || variant === null
+        ? "deze app komt uit de Vercel-template van Stage Two; die werk je bij met /stack:updaten van de andere Stage Two-plugin, niet met deze"
+        : `deze app heeft variant ${JSON.stringify(variant)} in .claude/stack-manifest.json en is niet van stack-light; deze plugin werkt alleen apps met variant "light" bij`;
+  return { status: "ander-spoor", reden };
+}
 
-function isCloudflareApp(map) {
+function leesManifestRuw(map) {
   try {
-    return isCloudflareManifest(JSON.parse(readFileSync(join(map, MANIFEST_PAD), "utf8")));
+    return JSON.parse(readFileSync(join(map, MANIFEST_PAD), "utf8"));
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -187,10 +197,10 @@ export function droogloop({ checkout, opAfstand = null, env = process.env }) {
     return mislukt("geef --repo als eigenaar/naam, bijvoorbeeld Mijn-Bedrijf/voorraad");
   }
   if (opAfstand === null && !isTemplateApp(checkout)) return GEEN_TEMPLATE;
-  if (opAfstand === null && !isCloudflareApp(checkout)) return ANDER_SPOOR;
+  if (opAfstand === null && !isLightManifest(leesManifestRuw(checkout))) return anderSpoor(leesManifestRuw(checkout));
 
   const metGh = ghAanwezig();
-  if (opAfstand !== null && !metGh) return mislukt("een andere app bijwerken kan alleen met de GitHub-opdrachtregel (gh); draai eerst /stack-cloudflare:installatie");
+  if (opAfstand !== null && !metGh) return mislukt("een andere app bijwerken kan alleen met de GitHub-opdrachtregel (gh); draai eerst /stack-light:installatie");
   if (metGh && !ghIngelogd()) return mislukt("log eerst in bij GitHub met `gh auth login`, dan kan de pull request geopend worden");
 
   const origin = opAfstand !== null ? `https://github.com/${opAfstand}.git` : originUrl(checkout);
@@ -223,6 +233,13 @@ export function droogloop({ checkout, opAfstand = null, env = process.env }) {
         verwijderWerkmap(werkmap);
         return GEEN_TEMPLATE;
       }
+      // Ook een andere app moet van dit spoor zijn: nooit light-bestanden in een app van
+      // het Vercel-spoor of van Cloudflare + Supabase.
+      if (!isLightManifest(leesManifestRuw(kloon))) {
+        const uit = anderSpoor(leesManifestRuw(kloon));
+        verwijderWerkmap(werkmap);
+        return uit;
+      }
       if (leesVersie(kloon) >= doel) {
         verwijderWerkmap(werkmap);
         return alBij(leesVersie(kloon), doel);
@@ -237,7 +254,7 @@ export function droogloop({ checkout, opAfstand = null, env = process.env }) {
     }
     if (!branchHerbouwbaar(kloon, branch)) {
       verwijderWerkmap(werkmap);
-      return gestopt(`op de branch ${branch} staat een commit die niet van /stack-cloudflare:updaten is; bekijk de open pull request voor die branch of verwijder de branch, en draai dan opnieuw`);
+      return gestopt(`op de branch ${branch} staat een commit die niet van /stack-light:updaten is; bekijk de open pull request voor die branch of verwijder de branch, en draai dan opnieuw`);
     }
 
     const tmplMap = kloonTemplate({ repo: tmplRepo, doel: join(werkmap, "template") });
@@ -339,7 +356,7 @@ export function voerUit({ werkmap, losOp }) {
     // Tussen de droogloop en nu kan iemand op de branch hebben gecommit; ook dan blijven we ervan af.
     if (!branchHerbouwbaar(kloon, branch)) {
       verwijderWerkmap(werkmap);
-      return gestopt(`op de branch ${branch} staat sinds de droogloop een commit die niet van /stack-cloudflare:updaten is; bekijk de open pull request voor die branch en draai dan opnieuw`);
+      return gestopt(`op de branch ${branch} staat sinds de droogloop een commit die niet van /stack-light:updaten is; bekijk de open pull request voor die branch en draai dan opnieuw`);
     }
     const gepusht = !alGelijkOpGitHub(kloon, branch);
     if (gepusht) push(kloon, branch);

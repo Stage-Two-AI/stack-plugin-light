@@ -17,9 +17,9 @@
  * (AGENTS.md) zijn níet beschermd: het projectdeel daarvan mag bewerkt worden en de
  * CI-check bewaakt het templatedeel.
  *
- * Eén regel weigert niets maar herinnert: wie in supabase/migrations/ schrijft, krijgt de
- * route docs/routes/databasewijziging.md voorgehouden (`context`). Die route was eerder
- * een eigen skill; nu komt hij precies op het moment dat het ertoe doet.
+ * Eén regel weigert niets maar herinnert: wie in migrations/ schrijft (de migraties van de
+ * D1-database), krijgt de route docs/routes/databasewijziging.md voorgehouden (`context`).
+ * Die route komt zo precies op het moment dat het ertoe doet.
  *
  * Bewust openlaten kan met STACK_ALLOW_POLICY_EDIT=1 (padbewerkingen), voor wanneer je
  * met opzet aan het vangnet zelf werkt. De dev-server heeft zijn eigen, kleinere
@@ -47,7 +47,8 @@ export const BESCHERMDE_PREFIXEN = [".github/workflows/", ".claude/"];
  */
 export const BASH_REGELS = [
   {
-    patroon: /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?dev\b|\bvite\s*$|\bvite\s+(?!build|preview)/,
+    // `wrangler dev` start dezelfde Worker buiten scripts/dev.mjs om; die telt dus ook mee.
+    patroon: /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?dev\b|\bvite\s*$|\bvite\s+(?!build|preview)|\bwrangler\s+dev\b/,
     // Lokaal kijken voor jezelf mag, mits expliciet: met STACK_ALLOW_DEV=1 vóór het
     // commando (of in de omgeving van de sessie). Dezelfde ontsnapping als scripts/dev.mjs,
     // zodat de hook nooit strenger is dan de kern. In de Claude-app hoeft dit niet: daar
@@ -86,16 +87,20 @@ export const BASH_REGELS = [
     ].join("\n"),
   },
   {
-    patroon: /\b(?:vercel|wrangler)\s+(?:deploy|--prod|versions\s+(?:upload|deploy))|\bsupabase\s+(?:db\s+push|functions\s+deploy|link)\b/,
+    // Uitrollen, en alles wat de echte D1, R2 of de geheimen van een omgeving raakt. Zonder
+    // --remote werkt wrangler d1 en r2 op de lokale kopie (.wrangler/); dat mag gewoon.
+    patroon:
+      /\bwrangler\s+(?:deploy\b|login\b|versions\s+(?:upload|deploy)\b|secret\b|d1\s+(?:create|delete)\b|r2\s+bucket\b|(?:d1|r2)\b[^&|;]*\s--remote\b)/,
     reden: [
-      "Niet met de hand deployen of aan de database van een omgeving zitten.",
+      "Niet met de hand uitrollen of aan de database of bestanden van een omgeving zitten.",
       "",
-      "Deployen gebeurt door te mergen: Actions past de migraties toe en rolt de",
-      "nieuwe versie uit naar Cloudflare. Een handmatige ingreep laat de repo uit de pas lopen",
-      "met de werkelijkheid, en dan is de historie waardeloos.",
+      "Uitrollen gebeurt door te mergen: Actions past de migraties toe (eerst op de",
+      "testdatabase, dan op productie) en rolt de nieuwe versie uit naar Cloudflare. Een",
+      "handmatige ingreep laat de repo uit de pas lopen met de werkelijkheid, en dan is de",
+      "historie waardeloos. De database en de bestanden zelf richt de beheer-repo in.",
       "",
-      "Databasewijziging nodig? Schrijf een migratie in supabase/migrations/.",
-      "Lokaal uitproberen mag wel: `pnpm db:start` en `pnpm db:reset`.",
+      "Databasewijziging nodig? Schrijf een nieuwe migratie in migrations/.",
+      "Lokaal uitproberen mag wel: `pnpm db:lokaal` (de lokale kopie, zonder --remote).",
     ].join("\n"),
   },
 ];
@@ -154,7 +159,7 @@ function weigerPad(relatief) {
       "",
       `Bestand: ${relatief}`,
       "",
-      "Wil je de nieuwste versie van dit bestand? Draai dan /stack-cloudflare:updaten: dat brengt",
+      "Wil je de nieuwste versie van dit bestand? Draai dan /stack-light:updaten: dat brengt",
       "de hele app naar de nieuwste template, als pull request.",
       "Wil je dat het anders werkt? Dan is dat een vraag aan Stage Two: zij passen het in",
       "de template aan en iedereen krijgt de verbetering.",
@@ -168,13 +173,14 @@ function weigerPad(relatief) {
 // ---------------------------------------------------------------- beoordeelTool
 
 /** De map met migraties; wie daarin schrijft, krijgt de databaseroute voorgehouden. */
-export const MIGRATIEMAP = "supabase/migrations/";
+export const MIGRATIEMAP = "migrations/";
 
 export const MIGRATIE_CONTEXT = [
-  "stack: dit is een databasewijziging. Lees vóór je verder schrijft docs/routes/databasewijziging.md",
-  "in zijn geheel en loop die stappen af (stap 0: bezit deze app de database wel?), naast de",
-  "route verder-werken. Migraties zijn aanvullend, elke nieuwe tabel krijgt RLS, een grant,",
-  "policies en een test in tests/rls/, en daarna `pnpm db:types`.",
+  "stack: dit is een databasewijziging (D1). Lees vóór je verder schrijft docs/routes/databasewijziging.md",
+  "in zijn geheel en loop die stappen af, naast de route verder-werken. Migraties zijn aanvullend:",
+  "een nieuw genummerd bestand in migrations/, een migratie die al in main staat pas je nooit meer",
+  "aan. De servercode in worker/ is de enige die de database leest en schrijft; leg het nieuwe",
+  "gedrag vast in een test en probeer het lokaal met `pnpm db:lokaal`.",
 ].join("\n");
 
 /**
@@ -248,7 +254,7 @@ export function beoordeelStart({ versieLokaal, versieOpAfstand, stempel, nu }) {
   const melding = [
     `stack: er is een nieuwere versie van de Stage Two-template. Deze app staat op versie ${versieLokaal},`,
     `de template is op versie ${versieOpAfstand}. Zeg dit één keer aan de gebruiker, in gewone taal, en`,
-    "bied /stack-cloudflare:updaten aan om de app bij te werken (dat opent een pull request). Voer het",
+    "bied /stack-light:updaten aan om de app bij te werken (dat opent een pull request). Voer het",
     "niet uit zonder dat hij erom vraagt.",
   ].join("\n");
   return { melding, nieuweStempel };

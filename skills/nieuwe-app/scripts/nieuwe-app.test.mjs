@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { schrijfBestanden, tijdelijkeMap } from "../../../lib/test-hulp.mjs";
 import {
   STAGE_TWO_LOGIN,
@@ -18,32 +19,32 @@ import {
   installeer,
   kiesBeheerRepo,
   regelOmgevingen,
-  verwijderNietMeenemen,
   voegAppToe,
   vulIn,
-  zetDatabaseStand,
-  zetWorkerNaam,
+  zetCloudflareNamen,
 } from "./nieuwe-app.mjs";
+
+const HIER = dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_LIGHT = join(HIER, "..", "..", "..", "..", "stack-template-light");
 
 function verseTemplate() {
   const map = tijdelijkeMap("nieuwe-app-");
   schrijfBestanden(map, {
     "README.md": "# <projectnaam>\n\n<!-- Vervang <projectnaam> en schrijf hieronder in één zin wat deze app doet,\nvanuit de gebruiker. -->\n\n<!-- Wat deze app doet, in één zin, vanuit de gebruiker geschreven. -->\n\nVerder.\n",
     "AGENTS.md": "# <projectnaam>\n\n<!-- Vervang <projectnaam> en de regel hieronder bij het opzetten van een project. -->\n<!-- Wat deze app doet, in één zin, vanuit de gebruiker geschreven. -->\n\n<!-- stack:begin -->\nkern\n<!-- stack:end -->\n",
-    ".github/CODEOWNERS": `/supabase/ @${STAGE_TWO_LOGIN}\n/.github/ @${STAGE_TWO_LOGIN}\n`,
-    "stack.config.json": `${JSON.stringify({ $beschrijving: ["uitleg"], database: true }, null, 2)}\n`,
-    "supabase/migrations/0001_items.sql": "create table items ();\n",
+    ".github/CODEOWNERS": `/migrations/ @${STAGE_TWO_LOGIN}\n/.github/ @${STAGE_TWO_LOGIN}\n`,
+    "migrations/0001_items.sql": "create table items (id integer primary key);\n",
   });
   return map;
 }
 
 test("argumenten: alle vlaggen, en een vlag zonder waarde is een fout", () => {
-  const a = leesArgumenten(["--json", "--droogloop", "--naam", "voorraad", "--eigenaar", "Org", "--database", "eigen", "--omschrijving", "Voorraad bijhouden", "--map", "/x"]);
+  const a = leesArgumenten(["--json", "--droogloop", "--naam", "voorraad", "--eigenaar", "Org", "--omschrijving", "Voorraad bijhouden", "--map", "/x"]);
   assert.equal(a.json, true);
   assert.equal(a.droogloop, true);
   assert.equal(a.naam, "voorraad");
   assert.equal(a.eigenaar, "Org");
-  assert.equal(a.database, "eigen");
+  assert.equal("database" in a, false, "in light is er geen databasestand");
   assert.equal(a.omschrijving, "Voorraad bijhouden");
   assert.equal(a.map, "/x");
   assert.throws(() => leesArgumenten(["--naam"]), /vraagt een waarde/);
@@ -56,20 +57,27 @@ test("naam: kleine letters, cijfers en streepjes; geen hoofdletters, spaties of 
   for (const fout of ["Voorraad", "voorraad app", "-voorraad", "voorraad-", "", "a", "ä"]) assert.equal(geldigeNaam(fout), false, fout);
 });
 
-test("controle: precies één modus; op het Cloudflare-spoor altijd een eigen database", () => {
-  const basis = { droogloop: true, doeHet: false, naam: "voorraad", eigenaar: "Org", database: "eigen" };
+test("argumenten: geen databasekeuze in light; --database en --gedeeld-* geven een duidelijke fout", () => {
+  for (const vlag of [["--database", "eigen"], ["--database", "geen"], ["--database", "gedeeld"], ["--gedeeld-eigenaar", "Org/erp"], ["--gedeeld-ref", "abc"]]) {
+    assert.throws(
+      () => leesArgumenten(["--droogloop", "--naam", "x1", "--eigenaar", "Org", ...vlag]),
+      /bestaat niet in stack-light.*D1-database en R2-bestanden/,
+      vlag.join(" "),
+    );
+  }
+});
+
+test("controle: precies één modus, geldige naam en eigenaar", () => {
+  const basis = { droogloop: true, doeHet: false, naam: "voorraad", eigenaar: "Org" };
   assert.equal(controleerArgumenten(basis), null);
   assert.match(controleerArgumenten({ ...basis, doeHet: true }), /precies één/);
   assert.match(controleerArgumenten({ ...basis, droogloop: false }), /precies één/);
   assert.equal(controleerArgumenten({ ...basis, droogloop: false, inrichten: true }), null);
   assert.match(controleerArgumenten({ ...basis, naam: "Voorraad" }), /kleine letters/);
   assert.match(controleerArgumenten({ ...basis, eigenaar: null }), /--eigenaar/);
-  assert.match(controleerArgumenten({ ...basis, database: "geen" }), /eigen database/);
-  assert.match(controleerArgumenten({ ...basis, database: "gedeeld" }), /eigen database/);
   assert.match(controleerArgumenten({ ...basis, naam: "a".repeat(42) }), /41 tekens/);
   assert.match(controleerArgumenten({ ...basis, groepen: ["Kantoor"] }), /--groepen/);
   assert.equal(controleerArgumenten({ ...basis, groepen: ["kantoor", "it"] }), null);
-  assert.equal(leesArgumenten(["--droogloop", "--naam", "x1", "--eigenaar", "Org"]).database, "eigen", "zonder --database: eigen");
   assert.deepEqual(leesArgumenten(["--inrichten", "--naam", "x1", "--eigenaar", "Org", "--groepen", "kantoor, it"]).groepen, ["kantoor", "it"]);
 });
 
@@ -88,7 +96,7 @@ test("invullen: projectnaam, omschrijving en reviewer erin, aanwijzingen eruit",
   assert.match(agents, /^# voorraad\n/);
   assert.match(agents, /Zien wat er op voorraad is\./);
   assert.match(agents, /stack:begin/, "de markeringen blijven staan");
-  assert.equal(readFileSync(join(map, ".github/CODEOWNERS"), "utf8"), "/supabase/ @bart\n/.github/ @bart\n");
+  assert.equal(readFileSync(join(map, ".github/CODEOWNERS"), "utf8"), "/migrations/ @bart\n/.github/ @bart\n");
 });
 
 test("invullen: zonder omschrijving blijft de plek staan, en een ontbrekend bestand is een fout", () => {
@@ -99,48 +107,25 @@ test("invullen: zonder omschrijving blijft de plek staan, en een ontbrekend best
   assert.throws(() => vulIn(leeg, { naam: "x", omschrijving: null, reviewer: "x" }), /README.md ontbreekt/);
 });
 
-test("databasestand geen: false, migraties weg, uitleg blijft", () => {
-  const map = verseTemplate();
-  zetDatabaseStand(map, { database: "geen" });
-  const config = JSON.parse(readFileSync(join(map, "stack.config.json"), "utf8"));
-  assert.equal(config.database, false);
-  assert.equal(config.gedeelde_database, undefined);
-  assert.deepEqual(config.$beschrijving, ["uitleg"]);
-  assert.equal(existsSync(join(map, "supabase/migrations")), false);
-});
-
-test("databasestand gedeeld: blok met eigenaar en ref, migraties weg", () => {
-  const map = verseTemplate();
-  zetDatabaseStand(map, { database: "gedeeld", gedeeldEigenaar: "Org/erp", gedeeldRef: "abcdefghijklmnopqrst" });
-  const config = JSON.parse(readFileSync(join(map, "stack.config.json"), "utf8"));
-  assert.equal(config.database, "gedeeld");
-  assert.deepEqual(config.gedeelde_database, { eigenaar: "Org/erp", project_ref: "abcdefghijklmnopqrst" });
-  assert.equal(existsSync(join(map, "supabase/migrations")), false);
-});
-
-test("databasestand eigen: true, migraties blijven", () => {
-  const map = verseTemplate();
-  zetDatabaseStand(map, { database: "eigen" });
-  const config = JSON.parse(readFileSync(join(map, "stack.config.json"), "utf8"));
-  assert.equal(config.database, true);
-  assert.equal(existsSync(join(map, "supabase/migrations/0001_items.sql")), true);
-});
-
-test("nog te doen: hosting, deur en database via de beheer-repo, ruleset alleen als die faalde", () => {
-  const goed = nogTeDoen({ database: "eigen", ruleset: { gelukt: true } });
+test("nog te doen: Worker, deur, D1 en R2 via de beheer-repo, ruleset alleen als die faalde", () => {
+  const goed = nogTeDoen({ ruleset: { gelukt: true } });
   assert.equal(goed.length, 2);
-  assert.match(goed[0], /Cloudflare en Supabase/);
+  assert.match(goed[0], /D1 en R2/);
+  assert.match(goed[0], /beheer-repo/);
   assert.match(goed[1], /Sentry/);
-  const open = nogTeDoen({ database: "eigen", ruleset: { gelukt: false } });
+  const open = nogTeDoen({ ruleset: { gelukt: false } });
   assert.equal(open.length, 3);
   assert.match(open[0], /niet beschermd/);
-  for (const regel of [...goed, ...open]) assert.doesNotMatch(regel, /Vercel/);
+  for (const regel of [...goed, ...open]) {
+    assert.doesNotMatch(regel, /Vercel|Supabase/);
+    assert.doesNotMatch(regel, /\u2014/);
+  }
 });
 
 test("inrichting lezen: de laatste INRICHTING-regel uit een logboek met voorvoegsels", () => {
   const log = [
-    "inrichten\tCloudflare en Supabase inrichten\t2026-09-22T10:00:00Z ::add-mask::geheim",
-    'inrichten\tCloudflare en Supabase inrichten\t2026-09-22T10:00:01Z INRICHTING {"status":"gelukt","worker":"voorraad"}',
+    "inrichten\tCloudflare inrichten\t2026-09-22T10:00:00Z ::add-mask::geheim",
+    'inrichten\tCloudflare inrichten\t2026-09-22T10:00:01Z INRICHTING {"status":"gelukt","worker":"voorraad"}',
     "inrichten\tSamenvatting\t2026-09-22T10:00:02Z klaar",
   ].join("\n");
   assert.deepEqual(leesInrichting(log), { status: "gelukt", worker: "voorraad" });
@@ -152,6 +137,7 @@ test("na inrichting: eerste uitrol, waarschuwingen doorgeven, altijd Sentry", ()
   const kaal = nogTeDoenNaInrichting({ resultaat: { status: "gelukt", waarschuwingen: [] } });
   assert.equal(kaal.length, 2);
   assert.match(kaal[0], /eerste uitrol/);
+  assert.match(kaal[0], /database-id's in wrangler\.jsonc/);
   const met = nogTeDoenNaInrichting({ resultaat: { status: "gelukt", waarschuwingen: ["geen session pooler"] } });
   assert.equal(met.length, 3);
   assert.match(met[1], /session pooler/);
@@ -174,42 +160,111 @@ test("toegang.json: staat de app erin, en toevoegen laat de rest precies staan",
   assert.deepEqual(toegang.apps, { oud: ["it"] }, "het origineel blijft onaangeroerd");
 });
 
-test("Worker-naam: de naam op het bovenste niveau wordt de appnaam, de rest blijft staan", () => {
-  const map = tijdelijkeMap("worker-naam-");
-  const voor = '{\n  "$schema": "node_modules/wrangler/config-schema.json",\n  // de proef-Worker\n  "name": "cf-proef",\n  "compatibility_date": "2026-09-01",\n  "env": { "x": {\n    "name": "binnen"\n  } }\n}\n';
-  schrijfBestanden(map, { "wrangler.jsonc": voor });
-  zetWorkerNaam(map, "richplant-start");
+// Een verkleinde wrangler.jsonc in de vorm van de light-template: commentaar, de proefnamen,
+// nullen als database-id en een env.preview met eigen opslag.
+const WRANGLER = `// Hoe deze app op Cloudflare draait (stack-light).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "light-proef",
+  "main": "worker/index.ts",
+  // Tijdelijke stand: nog geen eigen domein.
+  "workers_dev": true,
+  "preview_urls": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "light-proef",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BESTANDEN", "bucket_name": "light-proef", "jurisdiction": "eu" }],
+  "env": {
+    // De previews van pull requests: een eigen database en eigen bestanden.
+    "preview": {
+      "vars": { "OMGEVING": "test" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "light-proef-test",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "BESTANDEN", "bucket_name": "light-proef-test", "jurisdiction": "eu" }
+      ]
+    }
+  }
+}
+`;
+
+/** wrangler.jsonc zonder commentaar en losse komma's, om de uitkomst als JSON te lezen. */
+function leesJsonc(tekst) {
+  return JSON.parse(tekst.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1"));
+}
+
+test("Cloudflare-namen: Worker, database en bestanden voor productie <naam>, voor de previews <naam>-test", () => {
+  const map = tijdelijkeMap("cf-namen-");
+  schrijfBestanden(map, { "wrangler.jsonc": WRANGLER });
+  zetCloudflareNamen(map, "richplant-start");
   const na = readFileSync(join(map, "wrangler.jsonc"), "utf8");
-  assert.match(na, /^ {2}"name": "richplant-start",$/m);
-  assert.match(na, /"name": "binnen"/, "een geneste name blijft staan");
-  assert.equal(na.replace("richplant-start", "cf-proef"), voor);
-  const leeg = tijdelijkeMap("worker-naam-");
-  assert.throws(() => zetWorkerNaam(leeg, "x1"), /wrangler.jsonc ontbreekt/);
-  schrijfBestanden(leeg, { "wrangler.jsonc": "{}\n" });
-  assert.throws(() => zetWorkerNaam(leeg, "x1"), /"name"/);
+  const config = leesJsonc(na);
+  assert.equal(config.name, "richplant-start");
+  assert.equal(config.d1_databases[0].database_name, "richplant-start");
+  assert.equal(config.r2_buckets[0].bucket_name, "richplant-start");
+  assert.equal(config.env.preview.d1_databases[0].database_name, "richplant-start-test");
+  assert.equal(config.env.preview.r2_buckets[0].bucket_name, "richplant-start-test");
+  assert.doesNotMatch(na, /light-proef/, "geen proefnaam meer over");
 });
 
-test("nietMeenemen: beheer/ en de proef-workflows gaan weg, de rest blijft", () => {
-  const map = tijdelijkeMap("niet-meenemen-");
-  schrijfBestanden(map, {
-    ".claude/stack-manifest.json": JSON.stringify({ nietMeenemen: ["beheer/**", ".github/workflows/proef-*.yml", "../buiten", "bestaat-niet.txt"] }),
-    "beheer/inrichten-cloudflare.mjs": "x",
-    "beheer/lib/cloudflare.mjs": "x",
-    ".github/workflows/proef-inrichten.yml": "x",
-    ".github/workflows/proef-toegang.yml": "x",
-    ".github/workflows/ci.yml": "x",
-    ".github/workflows/uitrollen.yml": "x",
-    "src/main.tsx": "x",
-  });
-  const weg = verwijderNietMeenemen(map);
-  assert.deepEqual(weg.sort(), [".github/workflows/proef-inrichten.yml", ".github/workflows/proef-toegang.yml", "beheer/**"]);
-  assert.ok(!existsSync(join(map, "beheer")));
-  assert.ok(!existsSync(join(map, ".github/workflows/proef-toegang.yml")));
-  for (const blijft of [".github/workflows/ci.yml", ".github/workflows/uitrollen.yml", "src/main.tsx", ".claude/stack-manifest.json"]) {
-    assert.ok(existsSync(join(map, blijft)), blijft);
-  }
-  assert.deepEqual(verwijderNietMeenemen(tijdelijkeMap("geen-manifest-")), [], "zonder manifest: niets");
+test("Cloudflare-namen: de database-id's blijven de nullen en het commentaar blijft staan", () => {
+  const map = tijdelijkeMap("cf-namen-");
+  schrijfBestanden(map, { "wrangler.jsonc": WRANGLER });
+  zetCloudflareNamen(map, "voorraad");
+  const na = readFileSync(join(map, "wrangler.jsonc"), "utf8");
+  const config = leesJsonc(na);
+  assert.equal(config.d1_databases[0].database_id, "00000000-0000-0000-0000-000000000000");
+  assert.equal(config.env.preview.d1_databases[0].database_id, "00000000-0000-0000-0000-000000000001");
+  assert.match(na, /\/\/ Tijdelijke stand: nog geen eigen domein\./);
+  assert.match(na, /\/\/ De previews van pull requests/);
+  // Alleen de namen zijn anders: zet ze terug en het bestand is weer precies de template.
+  const terug = na.replaceAll("voorraad-test", "light-proef-test").replaceAll('"voorraad"', '"light-proef"');
+  assert.equal(terug, WRANGLER);
+  // Twee keer draaien (hervatten) geeft hetzelfde.
+  zetCloudflareNamen(map, "voorraad");
+  assert.equal(readFileSync(join(map, "wrangler.jsonc"), "utf8"), na);
 });
+
+test("Cloudflare-namen: ontbrekend bestand, geen name, geen env.preview of een dubbele database is een fout", () => {
+  const leeg = tijdelijkeMap("cf-namen-");
+  assert.throws(() => zetCloudflareNamen(leeg, "x1"), /wrangler.jsonc ontbreekt/);
+  schrijfBestanden(leeg, { "wrangler.jsonc": "{}\n" });
+  assert.throws(() => zetCloudflareNamen(leeg, "x1"), /"name"/);
+  schrijfBestanden(leeg, { "wrangler.jsonc": WRANGLER.replace(/"env"[\s\S]*\n {2}\}\n/, '"env": {}\n') });
+  assert.throws(() => zetCloudflareNamen(leeg, "x1"), /env\.preview/);
+  schrijfBestanden(leeg, { "wrangler.jsonc": WRANGLER.replace('"r2_buckets": [{ "binding": "BESTANDEN", "bucket_name": "light-proef", "jurisdiction": "eu" }],', "") });
+  assert.throws(() => zetCloudflareNamen(leeg, "x1"), /0 keer "bucket_name" voor productie/);
+});
+
+test(
+  "Cloudflare-namen: werkt op de echte wrangler.jsonc van de light-template",
+  { skip: !existsSync(join(TEMPLATE_LIGHT, "wrangler.jsonc")) && "stack-template-light staat niet naast deze repo" },
+  () => {
+    const map = tijdelijkeMap("cf-namen-echt-");
+    schrijfBestanden(map, { "wrangler.jsonc": readFileSync(join(TEMPLATE_LIGHT, "wrangler.jsonc"), "utf8") });
+    zetCloudflareNamen(map, "fotografie");
+    const config = leesJsonc(readFileSync(join(map, "wrangler.jsonc"), "utf8"));
+    assert.equal(config.name, "fotografie");
+    assert.deepEqual(config.d1_databases.map((d) => d.database_name), ["fotografie"]);
+    assert.deepEqual(config.r2_buckets.map((b) => b.bucket_name), ["fotografie"]);
+    assert.deepEqual(config.env.preview.d1_databases.map((d) => d.database_name), ["fotografie-test"]);
+    assert.deepEqual(config.env.preview.r2_buckets.map((b) => b.bucket_name), ["fotografie-test"]);
+    for (const d of [...config.d1_databases, ...config.env.preview.d1_databases]) {
+      assert.match(d.database_id, /^0{8}-0{4}-0{4}-0{4}-0{11}\d$/, "de id's vult App inrichten");
+    }
+  },
+);
 
 test("foutTekst: de hele melding, niet alleen de eerste regel, en hooguit de staart", () => {
   const fout = Object.assign(new Error("Command failed: pnpm install"), {
@@ -286,33 +341,30 @@ function nepGitHub(beginstand) {
   return { api, omgevingen, log };
 }
 
-test("regelOmgevingen: production en preview alleen main, lege proef-beheer weg", () => {
-  // Zo trof App inrichten het bij Bob aan: drie omgevingen, geen enkele beperkt.
+test("regelOmgevingen: production en preview alleen main, ook als ze al bestonden met een ruimere regel", () => {
   const gh = nepGitHub({
     production: { regels: [], geheimen: 0 },
     preview: { regels: [{ id: 1, name: "*", type: "branch" }], geheimen: 0 },
-    "proef-beheer": { regels: [], geheimen: 0 },
   });
   const gedaan = regelOmgevingen("Org/app", { api: gh.api });
   for (const naam of ["production", "preview"]) {
     assert.equal(gh.omgevingen[naam].beperkt, true);
     assert.deepEqual(gh.omgevingen[naam].regels.map((r) => r.name), ["main"]);
   }
-  assert.equal(gh.omgevingen["proef-beheer"], undefined);
-  assert.ok(gedaan.includes("proef-beheer: weg (leeg)"));
+  assert.deepEqual(gedaan, ["production: alleen main", "preview: alleen main"]);
 
   // Nog een keer draaien verandert niets en voegt main niet dubbel toe.
   regelOmgevingen("Org/app", { api: gh.api });
   assert.deepEqual(gh.omgevingen.production.regels.map((r) => r.name), ["main"]);
 });
 
-test("regelOmgevingen: maakt ontbrekende omgevingen aan en laat een proef-beheer met geheimen staan", () => {
-  const gh = nepGitHub({ "proef-beheer": { regels: [], geheimen: 2 } });
-  const gedaan = regelOmgevingen("Org/app", { api: gh.api });
+test("regelOmgevingen: maakt ontbrekende omgevingen aan en laat andere omgevingen met rust", () => {
+  const gh = nepGitHub({ "eigen-omgeving": { regels: [], geheimen: 2 } });
+  regelOmgevingen("Org/app", { api: gh.api });
   assert.deepEqual(gh.omgevingen.production.regels.map((r) => r.name), ["main"]);
   assert.deepEqual(gh.omgevingen.preview.regels.map((r) => r.name), ["main"]);
-  assert.ok(gh.omgevingen["proef-beheer"]);
-  assert.ok(gedaan.some((g) => g.startsWith("proef-beheer: blijft")));
+  assert.ok(gh.omgevingen["eigen-omgeving"], "geen opruimwerk meer: light heeft geen proef-omgeving");
+  assert.ok(!gh.log.some((r) => r.startsWith("DELETE repos/Org/app/environments/eigen-omgeving")));
 });
 
 test("kiesBeheerRepo: eerst stagetwo-beheer, dan de oude naam stack-beheer, anders null", () => {

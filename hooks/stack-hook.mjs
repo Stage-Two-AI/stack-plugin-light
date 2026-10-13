@@ -6,8 +6,8 @@
  *
  * De plugin draait in elke sessie van de klant, ook buiten stack-repo's. Daarom is de
  * eerste vraag altijd: heeft deze projectmap een .claude/stack-manifest.json? Zo niet,
- * dan exit 0 zonder uitvoer (R4, AE7). Staat er in dat manifest geen `variant: "cloudflare"`,
- * dan is het een app van het Vercel-spoor en doet deze plugin ook niets. Kapotte invoer is ook een no-op: een hook die
+ * dan exit 0 zonder uitvoer (R4, AE7). Staat er in dat manifest geen `variant: "light"`,
+ * dan is het een app van een ander spoor (Vercel of Cloudflare + Supabase) en doet deze plugin niets. Kapotte invoer is ook een no-op: een hook die
  * crasht mag nooit de sessie in de weg zitten.
  *
  * PreToolUse: beoordeelTool weigert templatebestanden en riskante Bash-opdrachten; een
@@ -15,7 +15,7 @@
  *
  * SessionStart: de lokale versie komt uit .claude/stack-version; zonder versienummer
  * gebeurt er niets (geen netwerkvraag). Daarna de stempel lezen uit
- * ${CLAUDE_PLUGIN_DATA}/<eigenaar>_<repo>.json (of ~/.cache/stagetwo-stack-cloudflare/); alleen
+ * ${CLAUDE_PLUGIN_DATA}/<eigenaar>_<repo>.json (of ~/.cache/stagetwo-stack-light/); alleen
  * als de regels zeggen dat er gekeken moet worden (geen stempel of ouder dan 24 uur)
  * volgt de netwerkvraag, met een tijdslimiet van drie seconden. De melding gaat als
  * gewone tekst naar stdout en wordt zo context voor de agent; de stempel wordt alleen
@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isCloudflareManifest } from "../lib/manifest.mjs";
+import { isLightManifest } from "../lib/manifest.mjs";
 import { beoordeelStart, beoordeelTool, moetControleren, stempelNaam } from "./regels.mjs";
 import { versieOpAfstand } from "./versie-op-afstand.mjs";
 
@@ -77,7 +77,7 @@ function originUrl(projectmap) {
 }
 
 function stempelMap() {
-  return process.env.CLAUDE_PLUGIN_DATA || join(process.env.HOME || homedir(), ".cache", "stagetwo-stack-cloudflare");
+  return process.env.CLAUDE_PLUGIN_DATA || join(process.env.HOME || homedir(), ".cache", "stagetwo-stack-light");
 }
 
 function versieOpAfstandOfTesthaak() {
@@ -144,8 +144,8 @@ function main() {
   if (typeof projectmap !== "string" || !projectmap) return;
   const manifest = leesJson(join(projectmap, ".claude", "stack-manifest.json"));
   if (!manifest) return;
-  // Een app van het Vercel-spoor is voor de andere Stage Two-plugin, niet voor deze.
-  if (!isCloudflareManifest(manifest)) return;
+  // Een app van een ander spoor (Vercel, of Cloudflare + Supabase) is voor een andere plugin.
+  if (!isLightManifest(manifest)) return;
 
   if (event.hook_event_name === "SessionStart") sessieStart(projectmap);
   else if (event.hook_event_name === "PreToolUse") preToolUse(projectmap, manifest, event);

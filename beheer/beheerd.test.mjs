@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { commit, git, maakKlantRepo, maakTemplateRepo, nepGh, nepPnpm_opPad, opruimen, tijdelijkeMap } from "../lib/test-hulp.mjs";
@@ -134,7 +134,7 @@ test("route plugin: --status toont het, --doe-het slaat het over met een zin", (
     w.draai(["--status"]);
     assert.match(w.tekst(), /route plugin/);
     w.draai(["--doe-het"]);
-    assert.match(w.tekst(), /de klant haalt dit zelf op met \/stack-cloudflare:updaten/);
+    assert.match(w.tekst(), /de klant haalt dit zelf op met \/stack-light:updaten/);
     assert.match(w.tekst(), /overgeslagen: 1/);
     assert.equal(git(w.klant.origin, "branch", "--list", "stack-sync/v9"), "");
   } finally {
@@ -194,5 +194,29 @@ test("--template-ref: de template op een branch in plaats van de tag, bijvoorbee
     assert.match(w.tekst(), /versie 8 -> 9/);
   } finally {
     w.opruimen();
+  }
+});
+
+test("ander spoor: een app zonder variant light in het register wordt overgeslagen, er wordt niets gepusht", () => {
+  for (const variant of ["cloudflare", null]) {
+    const w = wereld();
+    try {
+      const pad = join(w.klant.checkout, ".claude", "stack-manifest.json");
+      const manifest = JSON.parse(readFileSync(pad, "utf8"));
+      if (variant) manifest.variant = variant;
+      else delete manifest.variant;
+      git(w.klant.checkout, "checkout", "-q", "main");
+      writeFileSync(pad, JSON.stringify(manifest));
+      commit(w.klant.checkout, "ander spoor");
+      git(w.klant.checkout, "push", "-q", "origin", "main");
+      assert.equal(w.draai(["--doe-het"]), 0);
+      const t = w.tekst();
+      assert.match(t, /geen light-app/);
+      assert.match(t, /ander-spoor: 1/);
+      assert.equal(git(w.klant.origin, "branch", "--list", "stack-sync/v9"), "");
+      assert.ok(!w.nep.aanroepen().some((a) => a[0] === "pr" && a[1] === "create"));
+    } finally {
+      w.opruimen();
+    }
   }
 });

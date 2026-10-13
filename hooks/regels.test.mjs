@@ -35,7 +35,7 @@ const PROJECT = "/home/klant/app";
 // met manifestFormaat), zodat de tests niet afhangen van een checkout van de template.
 const MANIFEST = {
   manifestFormaat: 1,
-  variant: "cloudflare",
+  variant: "light",
   stackVersion: 9,
   vanDeTemplate: {
     vervangen: [
@@ -44,7 +44,7 @@ const MANIFEST = {
       ".claude/stack-version",
       "CLAUDE.md",
       ".github/workflows/ci.yml",
-      ".github/workflows/deploy-db.yml",
+      ".github/workflows/uitrollen.yml",
       ".github/pull_request_template.md",
       "scripts/guard-template.mjs",
       "scripts/dev.mjs",
@@ -130,8 +130,8 @@ test("pad: buiten de projectmap telt als buiten (null)", () => {
 
 // ---------------------------------------------------------------- beoordeelTool: paden
 
-test("tool: Edit van .github/workflows/ci.yml wordt geweigerd en de reden noemt /stack-cloudflare:updaten", () => {
-  geweigerd(bewerk(".github/workflows/ci.yml"), "/stack-cloudflare:updaten", ".github/workflows/ci.yml", "Stage Two", "guard:template");
+test("tool: Edit van .github/workflows/ci.yml wordt geweigerd en de reden noemt /stack-light:updaten", () => {
+  geweigerd(bewerk(".github/workflows/ci.yml"), "/stack-light:updaten", ".github/workflows/ci.yml", "Stage Two", "guard:template");
 });
 
 test("tool: src/App.tsx, AGENTS.md en package.json zijn toegestaan", () => {
@@ -189,7 +189,7 @@ test("tool: STACK_ALLOW_POLICY_EDIT=1 laat padbewerkingen door, maar niet de Bas
   assert.deepEqual(bewerk(".github/workflows/ci.yml", { env }), TOE);
   assert.deepEqual(bewerk(".claude/hooks/x.mjs", { env }), TOE);
   geweigerd(bash("git push --force", env), "Force pushen");
-  geweigerd(bewerk(".github/workflows/ci.yml", { env: { STACK_ALLOW_POLICY_EDIT: "0" } }), "/stack-cloudflare:updaten");
+  geweigerd(bewerk(".github/workflows/ci.yml", { env: { STACK_ALLOW_POLICY_EDIT: "0" } }), "/stack-light:updaten");
 });
 
 test("tool: zonder manifest wordt nooit geweigerd (AE7)", () => {
@@ -215,6 +215,8 @@ test("bash: pnpm dev zonder STACK_ALLOW_DEV=1 geweigerd, met toegestaan", () => 
   geweigerd(bash("pnpm dev"), "Geen dev-server", "STACK_ALLOW_DEV=1");
   geweigerd(bash("npm run dev"), "Geen dev-server");
   geweigerd(bash("vite"), "Geen dev-server");
+  geweigerd(bash("pnpm exec wrangler dev"), "Geen dev-server");
+  assert.deepEqual(bash("STACK_ALLOW_DEV=1 wrangler dev"), TOE);
   assert.deepEqual(bash("STACK_ALLOW_DEV=1 pnpm dev"), TOE);
   assert.deepEqual(bash("pnpm dev", { STACK_ALLOW_DEV: "1" }), TOE);
   assert.deepEqual(bash("vite build"), TOE);
@@ -231,14 +233,27 @@ test("bash: git push --force en git push origin main worden geweigerd", () => {
   assert.deepEqual(bash("git push"), TOE);
 });
 
-test("bash: deploy-commando's worden geweigerd", () => {
-  geweigerd(bash("vercel deploy"), "Niet met de hand deployen");
-  geweigerd(bash("vercel --prod"), "Niet met de hand deployen");
-  geweigerd(bash("pnpm exec wrangler deploy"), "Niet met de hand deployen");
-  geweigerd(bash("npx wrangler versions upload"), "Niet met de hand deployen");
-  geweigerd(bash("supabase db push"), "Niet met de hand deployen");
-  geweigerd(bash("wrangler deploy"), "Niet met de hand deployen");
-  assert.deepEqual(bash("pnpm db:start && pnpm db:reset"), TOE);
+test("bash: uitrollen en de echte D1, R2 en geheimen worden geweigerd", () => {
+  const uitrollen = "Niet met de hand uitrollen";
+  geweigerd(bash("pnpm exec wrangler deploy"), uitrollen, "migrations/");
+  geweigerd(bash("npx wrangler versions upload"), uitrollen);
+  geweigerd(bash("wrangler versions deploy"), uitrollen);
+  geweigerd(bash("wrangler deploy"), uitrollen);
+  geweigerd(bash("wrangler d1 migrations apply DB --remote"), uitrollen);
+  geweigerd(bash('wrangler d1 execute DB --remote --command "drop table items"'), uitrollen);
+  geweigerd(bash("wrangler r2 object put light-proef/a.jpg --file a.jpg --remote"), uitrollen);
+  geweigerd(bash("wrangler r2 bucket delete light-proef"), uitrollen);
+  geweigerd(bash("wrangler d1 create mijn-app"), uitrollen);
+  geweigerd(bash("wrangler secret put SLEUTEL"), uitrollen);
+  geweigerd(bash("pnpm exec wrangler login"), uitrollen);
+});
+
+test("bash: de lokale kopie van D1 en R2 mag wel", () => {
+  assert.deepEqual(bash("pnpm db:lokaal"), TOE);
+  assert.deepEqual(bash("wrangler d1 migrations apply DB --local"), TOE);
+  assert.deepEqual(bash('pnpm exec wrangler d1 execute DB --local --command "select 1"'), TOE);
+  assert.deepEqual(bash("wrangler d1 migrations list DB"), TOE);
+  assert.deepEqual(bash("pnpm build && pnpm test"), TOE);
 });
 
 // ---------------------------------------------------------------- het skillcommando door de sessiehook van claudecode
@@ -246,7 +261,7 @@ test("bash: deploy-commando's worden geweigerd", () => {
 const SESSIE_REGELS = "/home/claude/stack/machines/claudecode/hooks/sessie-check-regels.mjs";
 
 test(
-  "sessie-check: het commando van /stack-cloudflare:updaten gaat door de sessiehook van claudecode vanuit een klantmap",
+  "sessie-check: het commando van /stack-light:updaten gaat door de sessiehook van claudecode vanuit een klantmap",
   { skip: !existsSync(SESSIE_REGELS) && "Stack-checkout niet aanwezig op deze machine" },
   async () => {
     const { beoordeelTool: sessieBeoordeelTool } = await import(SESSIE_REGELS);
@@ -279,12 +294,12 @@ test("start: binnen 24 uur na de vorige controle wordt niet gekeken", () => {
   assert.equal(moetControleren({ stempel: { tijdstip: NU.toISOString() }, nu: NU }), false);
 });
 
-test("start: lokaal 9, op afstand 10, geen stempel: melding met beide nummers en /stack-cloudflare:updaten, plus stempel", () => {
+test("start: lokaal 9, op afstand 10, geen stempel: melding met beide nummers en /stack-light:updaten, plus stempel", () => {
   const { melding, nieuweStempel } = beoordeelStart({ versieLokaal: 9, versieOpAfstand: 10, stempel: null, nu: NU });
   assert.ok(melding);
   assert.match(melding, /versie 9/);
   assert.match(melding, /versie 10/);
-  assert.match(melding, /\/stack-cloudflare:updaten/);
+  assert.match(melding, /\/stack-light:updaten/);
   assert.match(melding, /niet uit zonder dat/);
   assert.doesNotMatch(melding, /\u2014/);
   assert.deepEqual(nieuweStempel, { versieOpAfstand: 10, tijdstip: NU.toISOString() });
@@ -419,15 +434,35 @@ test("hook: een repo zonder manifest geeft exit 0 zonder uitvoer, ook bij een be
   assert.deepEqual(readdirSync(data), [], "geen stempel zonder manifest");
 });
 
-test("hook: een app van het Vercel-spoor (manifest zonder variant cloudflare) laat deze plugin met rust", () => {
+test("hook: een app van het Vercel-spoor (manifest zonder variant) laat deze plugin met rust", () => {
   const map = maakProject();
   const { variant, ...vercel } = MANIFEST;
-  assert.equal(variant, "cloudflare");
+  assert.equal(variant, "light");
   writeFileSync(join(map, ".claude", "stack-manifest.json"), JSON.stringify(vercel));
   const data = mkdtempSync(join(tmpdir(), "stack-hook-data-"));
   assert.deepEqual(draaiHook(pre(map, "Edit", { file_path: ".github/workflows/ci.yml" })), { status: 0, stdout: "", stderr: "" });
   assert.deepEqual(draaiHook(start(map), { data, opAfstand: 10 }), { status: 0, stdout: "", stderr: "" });
   assert.deepEqual(readdirSync(data), [], "geen versiemelding of stempel voor een Vercel-app");
+});
+
+test("hook: een app van het Cloudflare + Supabase-spoor (variant cloudflare) laat deze plugin met rust", () => {
+  const map = maakProject();
+  writeFileSync(join(map, ".claude", "stack-manifest.json"), JSON.stringify({ ...MANIFEST, variant: "cloudflare" }));
+  const data = mkdtempSync(join(tmpdir(), "stack-hook-data-"));
+  const stil = { status: 0, stdout: "", stderr: "" };
+  assert.deepEqual(draaiHook(pre(map, "Edit", { file_path: ".github/workflows/ci.yml" })), stil, "geen weigering: de andere plugin bewaakt deze app");
+  assert.deepEqual(draaiHook(pre(map, "Bash", { command: "pnpm dev" })), stil);
+  assert.deepEqual(draaiHook(pre(map, "Write", { file_path: join(map, "migrations/0002_x.sql") })), stil, "geen herinnering");
+  assert.deepEqual(draaiHook(start(map), { data, opAfstand: 10 }), stil);
+  assert.deepEqual(readdirSync(data), [], "geen versiemelding of stempel voor een app van het andere spoor");
+});
+
+test("hook: een onbekende variant of een variant in andere hoofdletters telt niet als light", () => {
+  for (const variant of ["Light", "light ", "lite", 1, null]) {
+    const map = maakProject();
+    writeFileSync(join(map, ".claude", "stack-manifest.json"), JSON.stringify({ ...MANIFEST, variant }));
+    assert.deepEqual(draaiHook(pre(map, "Edit", { file_path: ".github/workflows/ci.yml" })), { status: 0, stdout: "", stderr: "" }, `variant ${JSON.stringify(variant)}`);
+  }
 });
 
 test("hook: PreToolUse in een repo met manifest weigert een templatebestand met JSON op stdout", () => {
@@ -437,26 +472,30 @@ test("hook: PreToolUse in een repo met manifest weigert een templatebestand met 
   const json = JSON.parse(uit.stdout);
   assert.equal(json.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.equal(json.hookSpecificOutput.permissionDecision, "deny");
-  assert.match(json.hookSpecificOutput.permissionDecisionReason, /\/stack-cloudflare:updaten/);
+  assert.match(json.hookSpecificOutput.permissionDecisionReason, /\/stack-light:updaten/);
   assert.match(json.hookSpecificOutput.permissionDecisionReason, /\.github\/workflows\/ci\.yml/);
 });
 
-test("tool: schrijven in supabase/migrations/ wordt toegestaan met de databaseroute als context", () => {
+test("tool: schrijven in migrations/ wordt toegestaan met de databaseroute als context", () => {
   for (const toolName of ["Write", "Edit"]) {
-    const r = beoordeelTool({ projectmap: PROJECT, manifest: MANIFEST, toolName, toolInput: { file_path: `${PROJECT}/supabase/migrations/20261001_items.sql` } });
+    const r = beoordeelTool({ projectmap: PROJECT, manifest: MANIFEST, toolName, toolInput: { file_path: `${PROJECT}/migrations/0002_status.sql` } });
     assert.equal(r.weiger, false);
     assert.equal(r.context, MIGRATIE_CONTEXT);
     assert.match(r.context, /docs\/routes\/databasewijziging\.md/);
+    assert.match(r.context, /migrations\//);
+    assert.doesNotMatch(r.context, /supabase|RLS/i, "geen Supabase-begrippen in het lichte spoor");
   }
-  const elders = beoordeelTool({ projectmap: PROJECT, manifest: MANIFEST, toolName: "Write", toolInput: { file_path: "supabase/functions/x/index.ts" } });
-  assert.deepEqual(elders, TOE, "alleen de migratiemap krijgt de herinnering");
-  const zonderManifest = beoordeelTool({ projectmap: PROJECT, manifest: null, toolName: "Write", toolInput: { file_path: "supabase/migrations/a.sql" } });
+  const t = (file_path) => beoordeelTool({ projectmap: PROJECT, manifest: MANIFEST, toolName: "Write", toolInput: { file_path } });
+  assert.deepEqual(t("worker/routes/items.ts"), TOE, "servercode is gewoon bouwen");
+  assert.deepEqual(t("supabase/migrations/20261001_items.sql"), TOE, "de Supabase-map bestaat in light niet en krijgt geen herinnering");
+  assert.deepEqual(t("src/migrations/x.ts"), TOE, "alleen de migratiemap in de hoofdmap");
+  const zonderManifest = beoordeelTool({ projectmap: PROJECT, manifest: null, toolName: "Write", toolInput: { file_path: "migrations/a.sql" } });
   assert.deepEqual(zonderManifest, TOE, "buiten een stack-repo zegt de hook niets");
 });
 
 test("hook: PreToolUse op een migratie geeft additionalContext zonder permissionDecision", () => {
   const map = maakProject();
-  const uit = draaiHook(pre(map, "Write", { file_path: join(map, "supabase/migrations/20261001_items.sql"), content: "create table x();" }));
+  const uit = draaiHook(pre(map, "Write", { file_path: join(map, "migrations/0002_items.sql"), content: "create table x();" }));
   assert.equal(uit.status, 0);
   const json = JSON.parse(uit.stdout);
   assert.equal(json.hookSpecificOutput.hookEventName, "PreToolUse");
@@ -480,7 +519,7 @@ test("hook: SessionStart lokaal 9, op afstand 10, geen stempel: melding en stemp
   assert.equal(eerste.status, 0, eerste.stderr);
   assert.match(eerste.stdout, /versie 9/);
   assert.match(eerste.stdout, /versie 10/);
-  assert.match(eerste.stdout, /\/stack-cloudflare:updaten/);
+  assert.match(eerste.stdout, /\/stack-light:updaten/);
   const stempels = readdirSync(data);
   assert.equal(stempels.length, 1);
   assert.match(stempels[0], /\.json$/);
@@ -522,8 +561,8 @@ test("hook: twee repo's van dezelfde klant krijgen twee onafhankelijke stempels"
   const a = maakProject();
   const b = maakProject();
   const data = mkdtempSync(join(tmpdir(), "stack-hook-data-"));
-  assert.match(draaiHook(start(a), { projectmap: a, data, opAfstand: 10 }).stdout, /\/stack-cloudflare:updaten/);
-  assert.match(draaiHook(start(b), { projectmap: b, data, opAfstand: 10 }).stdout, /\/stack-cloudflare:updaten/, "de stempel van a remt b niet");
+  assert.match(draaiHook(start(a), { projectmap: a, data, opAfstand: 10 }).stdout, /\/stack-light:updaten/);
+  assert.match(draaiHook(start(b), { projectmap: b, data, opAfstand: 10 }).stdout, /\/stack-light:updaten/, "de stempel van a remt b niet");
   assert.equal(readdirSync(data).length, 2);
 });
 

@@ -1,6 +1,6 @@
 ---
 name: nieuwe-app
-description: Een nieuwe app starten op de manier van Stage Two, op Cloudflare en Supabase - eerst meedenken over wat de app moet doen, dan de app aanmaken uit de nieuwste Cloudflare-template van Stage Two onder de organisatie van de gebruiker, en hosting, deur en database laten inrichten door de beheer-repo. Gebruik dit als de gebruiker /stack-cloudflare:nieuwe-app typt of een nieuwe, losstaande app wil beginnen (niet een uitbreiding van een bestaande app).
+description: Een nieuwe lichte app starten op de manier van Stage Two (één Cloudflare Worker met eigen servercode, een D1-database en R2-bestanden) - eerst meedenken over wat de app moet doen, dan de app aanmaken uit de nieuwste light-template van Stage Two onder de organisatie van de gebruiker, en Worker, deur, database en bestanden laten inrichten door de beheer-repo. Gebruik dit als de gebruiker /stack-light:nieuwe-app typt of een nieuwe, losstaande app wil beginnen (niet een uitbreiding van een bestaande app).
 ---
 
 Je helpt iemand die niet technisch is om een nieuwe app goed te beginnen. Het gesprek
@@ -22,7 +22,7 @@ Vraag wat de gebruiker wil maken, in één of twee zinnen. Toets het aan dit lij
 De regel erachter is simpel en de gebruiker mag hem horen: **één app per verzameling
 gegevens.** Gegevens die op twee plekken staan gaan uit elkaar lopen, en een app die de
 gegevens van een andere app gebruikt is voor iedereen moeilijker te overzien. Is het een
-uitbreiding? Zeg dat, en verwijs naar `/stack-cloudflare:verder-werken` in de map van die app. Stop
+uitbreiding? Zeg dat, en verwijs naar `/stack-light:verder-werken` in de map van die app. Stop
 dan hier.
 
 Wil de gebruiker toch een aparte app op de gegevens van een bestaande app, bijvoorbeeld
@@ -30,8 +30,9 @@ een portaal voor mensen van buiten? Dat kan, maar dat is een keuze met een eigen
 beveiligingsopzet, en die maakt Stage Two samen met de gebruiker. Verwijs naar Stage Two
 en stop hier.
 
-Moet de app **vindbaar zijn in Google** (een website, een webshop, een pagina die mensen
-delen)? Dan past deze template niet: die is voor werk-apps achter een login. Zeg dat en
+Moet de app **vindbaar zijn in Google** (een website, een webshop)? Dan past deze template
+meestal niet: die is voor apps achter een login, met hooguit een paar publieke pagina's
+(een galerij, een contactformulier). Is het vooral een openbare website, zeg dat en
 verwijs naar Stage Two. Stop dan hier.
 
 ## Stap 2: het idee scherp
@@ -49,20 +50,20 @@ het duurste antwoord.
 
 ## Stap 3: wat de app meekrijgt
 
-Hier is niets te kiezen; zeg het in twee zinnen. Elke app op dit spoor staat achter een
-deur: alleen de mensen uit de toegangslijst van het bedrijf komen erin, en ze loggen in
-met hun werkaccount (of met een code per mail). En elke app krijgt een eigen database bij
-Supabase, want het inloggen loopt daar doorheen. Een database is gratis zolang het om een
-paar apps gaat; daarna kost hij enkele tientallen euro's per maand, Stage Two weet het
-precieze bedrag.
+Hier is niets te kiezen; zeg het in twee zinnen. Elke app staat achter een deur: alleen
+de mensen uit de toegangslijst van het bedrijf komen erin, en ze loggen in met hun
+werkaccount (of met een code per mail); losse pagina's kunnen later publiek worden. En
+elke app krijgt bij Cloudflare een eigen database (D1) en een eigen plek voor bestanden
+(R2), twee keer: één voor het echte werk en één voor de previews, zodat een test nooit
+echte gegevens raakt. Dat kost per app vrijwel niets.
 
 ## Stap 4: naam en plek
 
 - **Naam.** Stel er een voor uit de omschrijving: kort, kleine letters, streepjes,
   bijvoorbeeld `voorraad-app`. Laat de gebruiker kiezen.
 - **Eigenaar.** Toon de organisaties van de gebruiker met `gh api user/orgs -q '.[].login'`.
-  Kies de organisatie van het bedrijf: daar staat de beheer-repo die hosting en database
-  inricht, en dan is de app van het bedrijf en niet van één persoon. Is er geen
+  Kies de organisatie van het bedrijf: daar staat de beheer-repo die hosting, database
+  en bestanden inricht, en dan is de app van het bedrijf en niet van één persoon. Is er geen
   organisatie, zeg dan dat Stage Two die eerst moet aanmaken, en stop hier.
 - **Wie erbij mag.** Lees de groepen uit de toegangslijst:
   `gh api repos/<eigenaar>/stagetwo-beheer/contents/toegang.json -H "Accept: application/vnd.github.raw"`
@@ -92,7 +93,12 @@ Het antwoord is één JSON-object met een `status`.
 
 Zeg dan: "Ik maak hem nu aan; dat duurt een paar minuten." Draai hetzelfde commando met
 `--doe-het` in plaats van `--droogloop`. Vraag geen toestemming meer; het typen van
-`/stack-cloudflare:nieuwe-app` en de bevestiging van het plan waren de opdracht.
+`/stack-light:nieuwe-app` en de bevestiging van het plan waren de opdracht.
+
+Het script zet zelf de namen in `wrangler.jsonc`: de Worker heet zoals de app, de database
+en de bestanden heten `<naam>` en voor de previews `<naam>-test`. De id's van de databases
+blijven nullen; die vult App inrichten straks met een pull request. Pas `wrangler.jsonc`
+hier niet zelf aan.
 
 - `mislukt`: geef `reden` door (dat is de volledige foutmelding). Staat er een `repo` in
   het antwoord, dan is de repo al aangemaakt: **draai precies hetzelfde `--doe-het`-commando
@@ -108,13 +114,13 @@ Zeg dan: "Ik maak hem nu aan; dat duurt een paar minuten." Draai hetzelfde comma
 - `gemaakt`: zeg waar de app staat (`url` en `map`). Ga dan door naar stap 5b; de
   `nogTeDoen` uit dit antwoord gebruik je alleen als stap 5b `geen-beheer` geeft.
 
-## Stap 5b: hosting, deur en database laten inrichten
+## Stap 5b: Worker, deur, database en bestanden laten inrichten
 
-Hosting en deur (Cloudflare) en de database (Supabase) worden ingericht door de workflow
-**App inrichten** in de beheer-repo van de organisatie (`<eigenaar>/stagetwo-beheer`, bij oudere klanten nog `stack-beheer`), op
-GitHub. Daar staan alle sleutels; op deze computer komt bewust geen Cloudflare- of
-Supabase-toegang. Probeer dat nooit zelf te doen, ook niet als er een opdrachtregel voor
-blijkt te staan (`wrangler`, `supabase`).
+De Worker, de deur (Access), de databases (D1) en de bestanden (R2), voor productie en voor
+de previews, worden ingericht door de workflow **App inrichten** in de beheer-repo van de
+organisatie (`<eigenaar>/stagetwo-beheer`, bij oudere klanten nog `stack-beheer`), op
+GitHub. Daar staan alle sleutels; op deze computer komt bewust geen Cloudflare-toegang.
+Probeer dat nooit zelf te doen, ook niet als `wrangler` op deze computer staat.
 
 Draai:
 
@@ -123,7 +129,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/nieuwe-app.mjs" --json --inrichten --naam "<na
 ```
 
 `--groepen` alleen als de app nog niet in de toegangslijst stond (stap 4). Zeg vooraf dat
-dit tot een kwartier kan duren: een nieuwe database moet opstarten. Het antwoord:
+dit een paar minuten kan duren. Het antwoord:
 
 - `kies-groepen`: de app staat nog niet in de toegangslijst en er zijn geen groepen
   meegegeven. Toon `groepen`, laat kiezen, en draai opnieuw met `--groepen`. Is de lijst
@@ -133,11 +139,13 @@ dit tot een kwartier kan duren: een nieuwe database moet opstarten. Het antwoord
   goedkeuren en mergen (zo beslist een mens wie bij een app mag), en dat je daarna
   hetzelfde commando nog een keer draait, zonder `--groepen`. Je kunt intussen al bouwen.
 - `geen-beheer`: deze organisatie heeft (nog) geen beheer-repo. Zeg dat Stage Two de
-  hosting en de database inricht, en loop de `nogTeDoen` van stap 5 langs.
+  hosting, de database en de bestanden inricht, en loop de `nogTeDoen` van stap 5 langs.
 - `mislukt`: geef `reden` door, met de `url` van de run als die er is. De app zelf is
   gewoon klaar; alleen de inrichting ontbreekt. Verwijs naar Stage Two.
-- `ingericht`: deur, inloggen en database staan. Het adres van de app staat in `adres`;
-  tot de eerste uitrol toont het "Deze app wordt ingericht.", al achter de deur. Loop
+- `ingericht`: Worker, deur, database en bestanden staan. Het adres van de app staat in
+  `adres`; tot de eerste uitrol toont het "Deze app wordt ingericht.", al achter de deur.
+  App inrichten opent ook een pull request op de app die de echte database-id's in
+  `wrangler.jsonc` zet; zeg dat de gebruiker die mergt (dat is de eerste uitrol). Loop
   `nogTeDoen` langs, elk punt in één zin.
 
 ## Stap 6: en nu verder
@@ -146,9 +154,9 @@ Zeg tot slot, in deze volgorde:
 
 1. Open de nieuwe map in Claude Code (Bestand, map openen). De afspraken en de bewaker
    van de werkwijze werken alleen in de map van de app zelf.
-2. Typ daar `/stack-cloudflare:verder-werken` en beschrijf de eerste versie uit stap 2.
-   Komen er gegevens in, dan begint dat werk met de eerste tabellen; die route zit in
-   `/stack-cloudflare:verder-werken` (met `docs/routes/databasewijziging.md`). De eerste
-   merge zet de app echt neer.
+2. Typ daar `/stack-light:verder-werken` en beschrijf de eerste versie uit stap 2.
+   Komen er gegevens in, dan begint dat werk met de eerste tabellen: een migratie in
+   `migrations/` (de route `docs/routes/databasewijziging.md`) en de servercode in
+   `worker/` die ze leest en schrijft. De eerste merge zet de app echt neer.
 3. Laat Stage Two weten dat deze app bestaat (naam en link), zodat hij in het overzicht
    komt en meedoet met updates van de werkwijze.

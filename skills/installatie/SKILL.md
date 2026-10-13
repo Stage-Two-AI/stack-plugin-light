@@ -1,11 +1,11 @@
 ---
 name: installatie
-description: De eerste stap op een computer waar nog niets staat - controleert en installeert wat er nodig is om met de Stage Two-werkwijze te werken (Git, Node, pnpm, de GitHub-opdrachtregel), begeleidt het inloggen bij GitHub, zet de naam voor Git, en vraagt daarna wat de gebruiker wil doen (een nieuwe app starten, een bestaande app openen of alles updaten). Gebruik dit als de gebruiker /stack-cloudflare:installatie typt, net begint, in een lege map zit, of vraagt wat er geïnstalleerd moet worden.
+description: De eerste stap op een computer waar nog niets staat - controleert en installeert wat er nodig is om met de Stage Two-werkwijze te werken (Git, Node, pnpm, de GitHub-opdrachtregel), begeleidt het inloggen bij GitHub, zet de naam voor Git, en vraagt daarna wat de gebruiker wil doen (een nieuwe app starten, een bestaande app openen of alles updaten). Gebruik dit als de gebruiker /stack-light:installatie typt, net begint, in een lege map zit, of vraagt wat er geïnstalleerd moet worden.
 ---
 
 Je helpt iemand die niet technisch is om zijn computer klaar te maken. Praat in gewone
 taal, één ding tegelijk, en leg uit wat er gaat gebeuren vóórdat het gebeurt. Vraag geen
-toestemming voor stappen die hieronder staan; de gebruiker heeft `/stack-cloudflare:installatie` getypt
+toestemming voor stappen die hieronder staan; de gebruiker heeft `/stack-light:installatie` getypt
 en dat is de opdracht. Voer niets uit wat hier niet staat.
 
 ## Stap 1: kijken wat er is
@@ -115,18 +115,18 @@ node "${CLAUDE_SKILL_DIR}/scripts/automatisch-bijwerken.mjs" --json
 - `gezet` of `al-goed`: klaar. Zeg niets over de details; het werkt vanaf de volgende
   keer dat de app start.
 - `mislukt`: geef `reden` door en ga door met stap 6. De plugin werkt gewoon; alleen het
-  vanzelf bijwerken ontbreekt, en `/stack-cloudflare:updaten` doet het dan met de hand.
+  vanzelf bijwerken ontbreekt, en `/stack-light:updaten` doet het dan met de hand.
 
 Achtergrond, niet voor de gebruiker: de desktop-app start Claude Code met
 `DISABLE_AUTOUPDATER=1`, en dat zet ook het bijwerken van plugins uit. Het script zet in
 de instellingen van de gebruiker `FORCE_AUTOUPDATE_PLUGINS=1` en `autoUpdate` voor de
-marketplace `stagetwo-cloudflare`, en laat de rest van dat bestand staan.
+marketplace `stagetwo-light`, en laat de rest van dat bestand staan.
 
 ## Stap 6: wat wil je doen?
 
 Alles staat klaar. Vraag nu, met deze drie keuzes:
 
-1. **Een nieuwe app beginnen.** Typ `/stack-cloudflare:nieuwe-app`. Die route denkt eerst mee
+1. **Een nieuwe app beginnen.** Typ `/stack-light:nieuwe-app`. Die route denkt eerst mee
    over wat de app moet doen, en zet daarna alles
    klaar.
 2. **Verder werken aan een bestaande app.** Vraag welke app. Kun je hem niet uit de
@@ -135,11 +135,11 @@ Alles staat klaar. Vraag nu, met deze drie keuzes:
    noemt ze). Kloon de app in een eigen map onder de huidige map met
    `gh repo clone <eigenaar>/<naam>` en draai daarin `pnpm install`. Zeg daarna dat
    de gebruiker die map in Claude Code moet openen (Bestand, map openen) en daar verder
-   kan met `/stack-cloudflare:verder-werken`. Werk niet vanuit de huidige map aan die app: de
+   kan met `/stack-light:verder-werken`. Werk niet vanuit de huidige map aan die app: de
    afspraken en de bewaker werken alleen als de map van de app zelf open staat.
-3. **Alles bijwerken.** Typ `/stack-cloudflare:updaten`. Dat werkt de plugin en de programma's op
+3. **Alles bijwerken.** Typ `/stack-light:updaten`. Dat werkt de plugin en de programma's op
    deze computer bij, en daarna de apps die de gebruiker kiest, elk als pull request.
    Een app hoeft daarvoor niet op deze computer te staan.
 
-Zeg tot slot dat `/stack-cloudflare:installatie` altijd opnieuw getypt mag worden, bijvoorbeeld op een
+Zeg tot slot dat `/stack-light:installatie` altijd opnieuw getypt mag worden, bijvoorbeeld op een
 andere computer of na een herinstallatie: het slaat over wat al goed staat.

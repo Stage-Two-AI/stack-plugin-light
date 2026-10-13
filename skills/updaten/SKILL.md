@@ -5,7 +5,7 @@ description: Werkt alles bij zoals een update van een besturingssysteem - de Sta
 
 Je werkt alles bij, zoals een update van een besturingssysteem: eerst wat op deze
 computer staat, dan deze app, dan desgewenst de andere apps. Praat in gewone taal en
-zeg per deel in één regel wat er gebeurt. Het typen van `/stack-cloudflare:updaten` is de
+zeg per deel in één regel wat er gebeurt. Het typen van `/stack-light:updaten` is de
 toestemming voor deel 1 tot en met 4; vraag die niet nog een keer. Voor deel 5 (andere
 apps) vraag je het wel.
 
@@ -29,7 +29,7 @@ node "${CLAUDE_SKILL_DIR}/../installatie/scripts/automatisch-bijwerken.mjs" --js
 plugin daarna nu meteen bij:
 
 ```sh
-claude plugin marketplace update stagetwo-cloudflare && claude plugin update stack-cloudflare@stagetwo-cloudflare
+claude plugin marketplace update stagetwo-light && claude plugin update stack-light@stagetwo-light
 ```
 
 Lukt dat (ook "already up to date" is goed), onthoud dan of er een nieuwe versie is
@@ -46,7 +46,7 @@ bash "${CLAUDE_SKILL_DIR}/../installatie/scripts/controle.sh"
 ```
 
 Ontbreekt er iets, of is `gh_ingelogd=nee`, stop dan en zeg dat de gebruiker eerst
-`/stack-cloudflare:installatie` draait. Staat alles er, werk het dan bij. Zeg vooraf dat Windows een
+`/stack-light:installatie` draait. Staat alles er, werk het dan bij. Zeg vooraf dat Windows een
 paar keer vraagt of een programma wijzigingen mag aanbrengen, en dat "Ja" het antwoord is.
 
 Windows (`os=windows`):
@@ -90,6 +90,9 @@ het betekent, in hooguit drie regels; gebruik daarvoor `samenvatting` als die er
 - `bij`: de app staat al op de nieuwste versie. Zeg dat en ga door naar deel 4.
 - `geen-template`: deze repo is niet uit de template gebouwd. Zeg dat en ga door naar
   deel 5.
+- `ander-spoor`: deze app hoort bij een ander spoor van Stage Two (Vercel, of Cloudflare
+  met Supabase) en dus bij een andere plugin. Geef `reden` door (die noemt het juiste
+  commando), sla deel 4 over en ga door naar deel 5. Werk zo'n app nooit met deze plugin bij.
 - `mislukt` of `gestopt`: `reden` is één zin met wat de gebruiker moet doen. Geef die
   door en ga door naar deel 4. Probeer het niet te omzeilen en verzin geen andere weg.
 - `klaar`: de werkkopie staat klaar. Ga door naar 3b.
@@ -97,7 +100,7 @@ het betekent, in hooguit drie regels; gebruik daarvoor `samenvatting` als die er
 ### 3b: alleen bij overgeslagen bestanden een vraag
 
 Is `overgeslagen` leeg, dan is er niets te kiezen: ga meteen naar 3c. Het typen van
-`/stack-cloudflare:updaten` was de toestemming voor de pull request; vraag die niet nog een keer.
+`/stack-light:updaten` was de toestemming voor de pull request; vraag die niet nog een keer.
 
 Staat er wel iets in `overgeslagen`, dan is dat bestand van de template, maar wijkt het
 hier lokaal af: iemand heeft er iets aan veranderd. Leg dat per bestand in gewone taal
@@ -118,7 +121,7 @@ keuze: het script weigert die, omdat het hele bestand vervangen ook het eigen de
 de gebruiker zou wissen. Bied dan alleen **eigen** aan. Wil de gebruiker toch de versie
 van de template, dan zet hij eerst zelf de markeringen terug in dat bestand (je mag
 uitleggen waar ze horen: als commentaarregels om het stuk dat van de template komt) en
-draait hij daarna `/stack-cloudflare:updaten` opnieuw.
+draait hij daarna `/stack-light:updaten` opnieuw.
 
 ### 3c: uitvoeren
 
@@ -135,7 +138,7 @@ eigen GitHub en opent de pull request, of werkt een bestaande bij.
 
 Komt hier `mislukt` of `gestopt` terug, dan handel je dat net zo af als in 3a:
 geef `reden` door en ga door naar deel 4. De tijdelijke kopie is dan al opgeruimd; wil
-de gebruiker het opnieuw proberen, dan draait hij later `/stack-cloudflare:updaten` opnieuw. Ga bij `gepusht` door naar 3d.
+de gebruiker het opnieuw proberen, dan draait hij later `/stack-light:updaten` opnieuw. Ga bij `gepusht` door naar 3d.
 
 ### 3d: wat je onthoudt voor het eind
 

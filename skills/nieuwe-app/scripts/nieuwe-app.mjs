@@ -1,45 +1,47 @@
 #!/usr/bin/env node
 /**
- * Het script achter /stack-cloudflare:nieuwe-app: maakt een nieuwe app aan uit de openbare
- * Cloudflare-template van Stage Two (Stage-Two-AI/stack-template-cloudflare), onder de
- * organisatie van de gebruiker, met
- * zijn eigen login. Dit is het deel van het opzetrecept dat een machine kan doen; het
- * gesprek ervoor (wat moet de app doen, welke databasestand) staat in SKILL.md.
+ * Het script achter /stack-light:nieuwe-app: maakt een nieuwe app aan uit de openbare
+ * lichte template van Stage Two (Stage-Two-AI/stack-template-light), onder de organisatie
+ * van de gebruiker, met zijn eigen login. Dit is het deel van het opzetrecept dat een
+ * machine kan doen; het gesprek ervoor (wat moet de app doen, wie mag erbij) staat in
+ * SKILL.md.
+ *
+ * Een light-app is één Cloudflare Worker met eigen servercode (worker/), een D1-database en
+ * R2-bestanden, voor productie en voor de previews apart. Er valt over de database niets te
+ * kiezen: elke app heeft ze allebei.
  *
  *   node nieuwe-app.mjs --json --droogloop --naam <naam> --eigenaar <org> \
  *        [--omschrijving "..."] [--map <map>]
- *       Op het Cloudflare-spoor heeft elke app een eigen database (Supabase): daar loopt het
- *       inloggen via de deur van Cloudflare doorheen. `--database eigen` mag, andere standen niet.
  *       voorcontrole: staat alles klaar, bestaat de repo nog niet, waar landt hij, wie
  *       wordt reviewer. Maakt niets aan.
  *
  *   node nieuwe-app.mjs --json --doe-het ...dezelfde vlaggen...
- *       repo aanmaken uit de template, klonen, de paden uit `nietMeenemen` van het manifest
- *       weghalen, invullen, de Worker-naam in wrangler.jsonc op de appnaam zetten,
- *       databasestand zetten, pakketten installeren, committen met de identiteit van de gebruiker, pushen, main
- *       beschermen. Hosting en database koppelt Stage Two: daar komt bewust geen
- *       toegang voor op de computer van de gebruiker (GitHub blijft de enige poort).
+ *       repo aanmaken uit de template, klonen, invullen, in wrangler.jsonc de Worker-naam
+ *       en de namen van database en bestanden zetten (<naam> en <naam>-test), pakketten
+ *       installeren, committen met de identiteit van de gebruiker, pushen, main beschermen.
+ *       De id's van de databases blijven de nullen uit de template: die vult App inrichten
+ *       met een pull request. Op de computer van de gebruiker komt bewust geen
+ *       Cloudflare-toegang (GitHub blijft de enige poort).
  *
  *   node nieuwe-app.mjs --json --inrichten --naam <naam> --eigenaar <org> [--groepen a,b]
  *       kijkt eerst of de app in toegang.json van <org>/stagetwo-beheer staat. Zo niet, dan
  *       opent het een pull request op stagetwo-beheer die hem toevoegt met de gekozen groepen
  *       (status `wacht-op-toegang`; de eigenaar keurt goed, daarna opnieuw draaien). Staat
  *       hij erin, dan start het de workflow "App inrichten" in <org>/stagetwo-beheer, wacht tot
- *       hij klaar is en leest het resultaat uit het logboek. Zo komen Cloudflare en Supabase
- *       erbij zonder dat er een Cloudflare- of Supabase-sleutel op deze computer staat.
+ *       hij klaar is en leest het resultaat uit het logboek. Zo komen de Worker, de deur, D1
+ *       en R2 erbij zonder dat er een Cloudflare-sleutel op deze computer staat.
  *
  * Elke uitkomst is één JSON-object op stdout met een `status`:
  *   klaar        (na --droogloop) alles staat klaar; zie `plan`
  *   gemaakt      (na --doe-het) de app staat op GitHub en op deze computer; zie `nogTeDoen`
- *   ingericht    (na --inrichten) hosting, deur en database staan; zie `resultaat`
+ *   ingericht    (na --inrichten) Worker, deur, database en bestanden staan; zie `resultaat`
  *   wacht-op-toegang (na --inrichten) de app staat nog niet in toegang.json; zie `pr`
  *   geen-beheer  (na --inrichten) deze eigenaar heeft geen beheer-repo; Stage Two koppelt
  *   mislukt      een voorwaarde ontbreekt of een stap faalde; `reden` is één zin met één
  *                handeling. Was de repo al aangemaakt, dan staat hij in `repo`.
  *
- * Er komt geen token van Stage Two aan te pas (KTD5): alles loopt via `gh` met de login
- * van de gebruiker. De map van de gebruiker wordt alleen aangevuld met één nieuwe
- * submap.
+ * Er komt geen token van Stage Two aan te pas: alles loopt via `gh` met de login van de
+ * gebruiker. De map van de gebruiker wordt alleen aangevuld met één nieuwe submap.
  *
  * Hervatten: stopt `--doe-het` halverwege (netwerk, een pnpm-versiewissel op Windows),
  * dan maakt hetzelfde commando het af. Bestaat de repo al en is hij uit deze template
@@ -47,16 +49,13 @@
  * wat er nog ontbreekt: invullen, installeren, committen, pushen, main beschermen en de
  * omgevingen. Een assistent zet die dingen dus nooit met de hand.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ghAanwezig, ghIngelogd, git, sh } from "../../../lib/repo.mjs";
 
-export const TEMPLATE = "Stage-Two-AI/stack-template-cloudflare";
+export const TEMPLATE = "Stage-Two-AI/stack-template-light";
 export const STAGE_TWO_LOGIN = "StageTwoAI";
-// Op het Cloudflare-spoor heeft elke app een eigen database: het inloggen loopt van de
-// deur van Cloudflare via Supabase (zie stack-beheer, inrichten-cloudflare.mjs).
-export const DATABASESTANDEN = ["eigen"];
 const HIER = dirname(fileURLToPath(import.meta.url));
 const RULESET_PAD = join(HIER, "..", "ruleset.json");
 
@@ -71,9 +70,6 @@ export function leesArgumenten(argv) {
     naam: null,
     eigenaar: null,
     omschrijving: null,
-    database: null,
-    gedeeldEigenaar: null,
-    gedeeldRef: null,
     map: null,
     groepen: null,
   };
@@ -81,9 +77,6 @@ export function leesArgumenten(argv) {
     "--naam": "naam",
     "--eigenaar": "eigenaar",
     "--omschrijving": "omschrijving",
-    "--database": "database",
-    "--gedeeld-eigenaar": "gedeeldEigenaar",
-    "--gedeeld-ref": "gedeeldRef",
     "--map": "map",
     "--groepen": "groepen",
   };
@@ -93,14 +86,17 @@ export function leesArgumenten(argv) {
     else if (a === "--droogloop") uit.droogloop = true;
     else if (a === "--doe-het") uit.doeHet = true;
     else if (a === "--inrichten") uit.inrichten = true;
-    else if (a in metWaarde) {
+    else if (a === "--database" || a.startsWith("--gedeeld-")) {
+      // Uit de andere sporen. In light valt er niets te kiezen; liever een duidelijke zin
+      // dan "onbekende optie".
+      throw new Error(`${a} bestaat niet in stack-light: elke app heeft altijd een eigen D1-database en R2-bestanden`);
+    } else if (a in metWaarde) {
       const waarde = argv[i + 1];
       if (waarde === undefined || waarde.startsWith("--")) throw new Error(`${a} vraagt een waarde`);
       uit[metWaarde[a]] = waarde;
       i += 1;
     } else throw new Error(`onbekende optie: ${a}`);
   }
-  if (uit.database === null) uit.database = "eigen";
   if (uit.groepen !== null) uit.groepen = uit.groepen.split(",").map((g) => g.trim()).filter(Boolean);
   return uit;
 }
@@ -118,11 +114,8 @@ export function controleerArgumenten(arg) {
     return "de naam mag alleen kleine letters, cijfers en streepjes bevatten (bijvoorbeeld voorraad-app)";
   }
   if (!arg.eigenaar) return "geef met --eigenaar het GitHub-account of de organisatie mee waar de app komt";
-  if (!DATABASESTANDEN.includes(arg.database)) {
-    return "op het Cloudflare-spoor heeft elke app een eigen database; laat --database weg of geef eigen mee";
-  }
-  // De beheer-workflow accepteert hooguit 41 tekens (Access- en Supabase-namen krijgen er
-  // nog een voorvoegsel en een achtervoegsel bij).
+  // De beheer-workflow accepteert hooguit 41 tekens: de namen van de Access-apps, de
+  // preview-Worker en de testdatabase krijgen er nog een voor- of achtervoegsel bij.
   if (arg.naam.length > 41) return "de naam mag hooguit 41 tekens lang zijn";
   if (arg.groepen && !arg.groepen.every((g) => /^[a-z0-9][a-z0-9-]{0,40}$/.test(g))) {
     return "--groepen: namen van groepen uit toegang.json, met komma's (kleine letters, cijfers, streepjes)";
@@ -166,86 +159,48 @@ export function vulIn(map, { naam, omschrijving, reviewer }) {
 }
 
 /**
- * Haalt de paden uit `nietMeenemen` van het manifest weg: wat alleen in de template zelf
- * hoort (de inrichtingsscripts in beheer/ en de proef-workflows met de brede sleutels).
- * Patronen: `map/**` (de hele map) of een pad met `*` in het laatste deel.
+ * Zet in wrangler.jsonc de namen van deze app: de Worker-naam (bovenaan) wordt de appnaam,
+ * en `database_name` en `bucket_name` worden `<naam>` voor productie en `<naam>-test` in
+ * `env.preview`. De template draagt de namen van zijn eigen proef-Worker; zonder deze stap
+ * zou de nieuwe app over die Worker en zijn opslag heen uitrollen. Het adres wordt zo
+ * <appnaam>.<subdomein>.workers.dev.
+ *
+ * De `database_id`'s blijven de nullen uit de template: App inrichten maakt de databases
+ * aan en zet de echte id's erin met een pull request. Tot dan slaat de uitrol over.
+ *
+ * Tekstueel, niet via JSON: het commentaar in wrangler.jsonc moet blijven staan.
  */
-export function verwijderNietMeenemen(map) {
-  const manifestPad = join(map, ".claude", "stack-manifest.json");
-  if (!existsSync(manifestPad)) return [];
-  const patronen = JSON.parse(readFileSync(manifestPad, "utf8")).nietMeenemen ?? [];
-  const weg = [];
-  for (const patroon of patronen) {
-    if (typeof patroon !== "string" || patroon.includes("..") || patroon.startsWith("/")) continue;
-    if (patroon.endsWith("/**")) {
-      const dir = patroon.slice(0, -3);
-      if (existsSync(join(map, dir))) {
-        rmSync(join(map, dir), { recursive: true, force: true });
-        weg.push(patroon);
-      }
-      continue;
-    }
-    const map2 = dirname(patroon) === "." ? "" : dirname(patroon);
-    const naam = patroon.slice(map2 ? map2.length + 1 : 0);
-    if (!naam.includes("*")) {
-      if (existsSync(join(map, patroon))) {
-        rmSync(join(map, patroon), { recursive: true, force: true });
-        weg.push(patroon);
-      }
-      continue;
-    }
-    const delen = naam.split("*").map((d) => d.replace(/[.+?^$()|[\]{}\\]/g, "\\$&"));
-    const regex = new RegExp(`^${delen.join("[^/]*")}$`);
-    if (!existsSync(join(map, map2))) continue;
-    for (const bestand of readdirSync(join(map, map2))) {
-      if (regex.test(bestand)) {
-        rmSync(join(map, map2, bestand), { recursive: true, force: true });
-        weg.push(map2 ? `${map2}/${bestand}` : bestand);
-      }
-    }
-  }
-  return weg;
-}
-
-/**
- * De Worker-naam in wrangler.jsonc wordt de appnaam. De template draagt de naam van zijn
- * eigen proef-Worker; zonder deze stap zou de nieuwe app over die Worker heen uitrollen.
- * Het adres wordt zo <appnaam>.<subdomein>.workers.dev.
- */
-export function zetWorkerNaam(map, naam) {
+export function zetCloudflareNamen(map, naam) {
   const pad = join(map, "wrangler.jsonc");
   if (!existsSync(pad)) throw new Error("wrangler.jsonc ontbreekt na het klonen; de template is niet goed overgenomen");
-  const tekst = readFileSync(pad, "utf8");
+  let tekst = readFileSync(pad, "utf8");
   // De eerste "name" op het bovenste niveau (twee spaties inspringing, zoals in de template).
-  const patroon = /^( {2}"name"\s*:\s*")[^"]*(")/m;
-  if (!patroon.test(tekst)) throw new Error('wrangler.jsonc heeft geen "name" op het bovenste niveau');
-  writeFileSync(pad, tekst.replace(patroon, `$1${naam}$2`));
-}
+  const naamPatroon = /^( {2}"name"\s*:\s*")[^"]*(")/m;
+  if (!naamPatroon.test(tekst)) throw new Error('wrangler.jsonc heeft geen "name" op het bovenste niveau');
+  tekst = tekst.replace(naamPatroon, `$1${naam}$2`);
 
-/**
- * De databasestand in stack.config.json. `geen` en `gedeeld` bezitten geen database;
- * dan gaan de voorbeeldmigraties weg, anders laat guard:migrations de poort falen.
- */
-export function zetDatabaseStand(map, { database, gedeeldEigenaar, gedeeldRef }) {
-  const pad = join(map, "stack.config.json");
-  const config = JSON.parse(readFileSync(pad, "utf8"));
-  if (database === "eigen") {
-    config.database = true;
-    delete config.gedeelde_database;
-  } else if (database === "gedeeld") {
-    config.database = "gedeeld";
-    config.gedeelde_database = { eigenaar: gedeeldEigenaar, project_ref: gedeeldRef };
-  } else {
-    config.database = false;
-    delete config.gedeelde_database;
+  // Alles na `"preview": {` binnen `"env"` is de testomgeving; alles ervoor is productie.
+  const preview = /"env"\s*:\s*\{[\s\S]*?"preview"\s*:\s*\{/.exec(tekst);
+  if (!preview) throw new Error("wrangler.jsonc heeft geen env.preview; de previews hebben een eigen database en eigen bestanden nodig");
+  const grens = preview.index + preview[0].length;
+  const geteld = { productie: { database_name: 0, bucket_name: 0 }, test: { database_name: 0, bucket_name: 0 } };
+  tekst = tekst.replace(/("(database_name|bucket_name)"\s*:\s*")[^"]*(")/g, (_, voor, sleutel, na, plek) => {
+    const omgeving = plek >= grens ? "test" : "productie";
+    geteld[omgeving][sleutel] += 1;
+    return `${voor}${omgeving === "test" ? `${naam}-test` : naam}${na}`;
+  });
+  for (const [omgeving, sleutels] of Object.entries(geteld)) {
+    for (const [sleutel, aantal] of Object.entries(sleutels)) {
+      if (aantal !== 1) {
+        throw new Error(`wrangler.jsonc heeft ${aantal} keer "${sleutel}" voor ${omgeving}, verwacht precies één; meld dit bij Stage Two`);
+      }
+    }
   }
-  writeFileSync(pad, `${JSON.stringify(config, null, 2)}\n`);
-  const migraties = join(map, "supabase", "migrations");
-  if (database !== "eigen" && existsSync(migraties)) rmSync(migraties, { recursive: true, force: true });
+  writeFileSync(pad, tekst);
 }
 
-/** Wat er na het script nog te doen is, per databasestand en per uitkomst. */
-export function nogTeDoen({ database, ruleset }) {
+/** Wat er na het script nog te doen is. */
+export function nogTeDoen({ ruleset }) {
   const lijst = [];
   if (!ruleset.gelukt) {
     lijst.push(
@@ -253,7 +208,7 @@ export function nogTeDoen({ database, ruleset }) {
     );
   }
   lijst.push(
-    "Hosting, deur en database (Cloudflare en Supabase): Stage Two of de beheer-repo van de organisatie richt die in. Daar komt bewust geen toegang voor op deze computer. Tot die tijd kun je gewoon bouwen; de kwaliteitspoort draait tegen een eigen testdatabase.",
+    "Hosting, deur, database en bestanden (Cloudflare: de Worker, Access, D1 en R2): de beheer-repo van de organisatie of Stage Two richt die in. Daar komt bewust geen toegang voor op deze computer. Tot die tijd kun je gewoon bouwen; de tests draaien tegen een lokale database.",
   );
   lijst.push("Foutbewaking (Sentry): Stage Two maakt een project aan en zet de DSN als omgevingsvariabele. Mag later.");
   return lijst;
@@ -394,10 +349,9 @@ export function hervatBesluit({ repo, uitTemplate, map, mapIsKloon }) {
 
 /**
  * Zet de omgevingen van de app goed: `production` en `preview` bestaan en laten alleen
- * `main` toe, en een lege `proef-beheer` (van de proef-workflows in de eerste commit van
- * de template) gaat weg. GitHub maakt een omgeving vanzelf aan zodra een workflow ernaar
- * verwijst, zonder beperking; daarna weigert App inrichten terecht ("niet beperkt tot
- * main"). `api(methode, pad, velden)` geeft de JSON terug (of null); in tests nep.
+ * `main` toe. GitHub maakt een omgeving vanzelf aan zodra een workflow ernaar verwijst,
+ * zonder beperking; daarna weigert App inrichten terecht ("niet beperkt tot main").
+ * `api(methode, pad, velden)` geeft de JSON terug (of null); in tests nep.
  */
 export function regelOmgevingen(repo, { api = ghApi } = {}) {
   const gedaan = [];
@@ -417,16 +371,6 @@ export function regelOmgevingen(repo, { api = ghApi } = {}) {
       api("POST", `repos/${repo}/environments/${omgeving}/deployment-branch-policies`, { name: "main", type: "branch" });
     }
     gedaan.push(`${omgeving}: alleen main`);
-  }
-  const alle = api("GET", `repos/${repo}/environments?per_page=100`) ?? {};
-  if ((alle.environments ?? []).some((o) => o.name === "proef-beheer")) {
-    const geheimen = api("GET", `repos/${repo}/environments/proef-beheer/secrets`) ?? {};
-    if ((geheimen.total_count ?? 0) === 0) {
-      api("DELETE", `repos/${repo}/environments/proef-beheer`);
-      gedaan.push("proef-beheer: weg (leeg)");
-    } else {
-      gedaan.push("proef-beheer: blijft (er staan geheimen in; vraag Stage Two)");
-    }
   }
   return gedaan;
 }
@@ -492,7 +436,7 @@ export function leesInrichting(logtekst) {
 /** Wat er na een geslaagde inrichting nog open staat. */
 export function nogTeDoenNaInrichting({ resultaat }) {
   const lijst = [
-    "De eerste uitrol: maak een kleine wijziging via /stack-cloudflare:verder-werken en merge de pull request. Tot dan toont het adres \"Deze app wordt ingericht.\", al achter de deur.",
+    "De eerste uitrol: App inrichten heeft een pull request op de app geopend die de echte database-id's in wrangler.jsonc zet. Merge die zodra de checks groen zijn; dan past Actions de migraties toe en zet de app neer. Tot dan toont het adres \"Deze app wordt ingericht.\", al achter de deur.",
   ];
   if (resultaat?.waarschuwingen?.length) {
     for (const w of resultaat.waarschuwingen) lijst.push(`Waarschuwing van de inrichting, geef door aan Stage Two: ${w}`);
@@ -556,27 +500,27 @@ function vraagToegangAan(beheer, arg, toegang, sha) {
   return sh("gh", [
     "pr", "create", "--repo", beheer, "--base", "main", "--head", branch,
     "--title", `Toegang: ${arg.naam}`,
-    "--body", `De nieuwe app **${arg.naam}** komt in toegang.json, voor de groep(en) ${arg.groepen.map((g) => `\`${g}\``).join(", ")}.\n\nAangevraagd met /stack-cloudflare:nieuwe-app. Na goedkeuring en merge kan de app worden ingericht.`,
+    "--body", `De nieuwe app **${arg.naam}** komt in toegang.json, voor de groep(en) ${arg.groepen.map((g) => `\`${g}\``).join(", ")}.\n\nAangevraagd met /stack-light:nieuwe-app. Na goedkeuring en merge kan de app worden ingericht.`,
   ]);
 }
 
 /**
  * Start de workflow in de beheer-repo en wacht op het resultaat. `gh` doet al het werk
  * met de login van de gebruiker: die heeft Write op stagetwo-beheer (mag starten) en leest
- * het logboek. Er komt geen sleutel van Cloudflare of Supabase aan te pas: die staan
- * alleen in de omgeving beheer van de beheer-repo.
+ * het logboek. Er komt geen sleutel van Cloudflare aan te pas: die staan alleen in de
+ * omgeving beheer van de beheer-repo.
  */
 export function richtIn(arg, { cwd = process.cwd(), wachtMs = 5000, maxWachtMinuten = 30 } = {}) {
   const fout = controleerArgumenten(arg);
   if (fout) return { status: "mislukt", reden: fout };
-  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-cloudflare:installatie" };
-  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-cloudflare:installatie)" };
+  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-light:installatie" };
+  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-light:installatie)" };
 
   const beheer = isOrganisatie(arg.eigenaar) ? kiesBeheerRepo(arg.eigenaar) : null;
   if (!beheer) {
     return {
       status: "geen-beheer",
-      reden: `${arg.eigenaar} heeft geen beheer-repo (${arg.eigenaar}/${BEHEER_REPO}); Stage Two richt de hosting en de database in`,
+      reden: `${arg.eigenaar} heeft geen beheer-repo (${arg.eigenaar}/${BEHEER_REPO}); Stage Two richt de hosting, de database en de bestanden in`,
     };
   }
   const repo = `${arg.eigenaar}/${arg.naam}`;
@@ -660,7 +604,6 @@ export function richtIn(arg, { cwd = process.cwd(), wachtMs = 5000, maxWachtMinu
     repo,
     adres: resultaat.hostname ? `https://${resultaat.hostname}` : null,
     url: run.url,
-    database: arg.database,
     resultaat,
     nogTeDoen: nogTeDoenNaInrichting({ resultaat }),
   };
@@ -675,11 +618,11 @@ export function voorcontrole(arg, { cwd = process.cwd() } = {}) {
     try {
       sh(cli, ["--version"], { shell: cli === "pnpm" && process.platform === "win32" });
     } catch {
-      return { status: "mislukt", reden: `${cli} staat niet op deze computer; draai eerst /stack-cloudflare:installatie` };
+      return { status: "mislukt", reden: `${cli} staat niet op deze computer; draai eerst /stack-light:installatie` };
     }
   }
-  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-cloudflare:installatie" };
-  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-cloudflare:installatie)" };
+  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-light:installatie" };
+  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-light:installatie)" };
 
   const gebruiker = login();
   const org = isOrganisatie(arg.eigenaar);
@@ -703,9 +646,6 @@ export function voorcontrole(arg, { cwd = process.cwd() } = {}) {
     mapIsKloon: mapEr && isKloonVan(doel, repo),
   });
   if (besluit.besluit === "weiger") return { status: "mislukt", reden: `${besluit.reden} (${repo}, ${doel})` };
-  if (arg.database === "gedeeld" && !repoBestaat(arg.gedeeldEigenaar)) {
-    return { status: "mislukt", reden: `de app ${arg.gedeeldEigenaar} die de database bezit is niet gevonden op GitHub` };
-  }
 
   return {
     status: "klaar",
@@ -713,7 +653,6 @@ export function voorcontrole(arg, { cwd = process.cwd() } = {}) {
       repo,
       url: `https://github.com/${repo}`,
       map: doel,
-      database: arg.database,
       reviewer: kiesReviewer({ login: gebruiker }),
       gebruiker,
       organisatie: org,
@@ -766,10 +705,8 @@ export function doeHet(arg, { cwd = process.cwd() } = {}) {
       sh("gh", ["repo", "clone", repo, map, "--", "--quiet"], { timeout: 300000 });
     }
     stap = "invullen";
-    verwijderNietMeenemen(map);
     vulIn(map, { naam: arg.naam, omschrijving: arg.omschrijving, reviewer });
-    zetWorkerNaam(map, arg.naam);
-    zetDatabaseStand(map, arg);
+    zetCloudflareNamen(map, arg.naam);
     stap = "pakketten installeren (pnpm install)";
     installeer(map);
 
@@ -784,7 +721,7 @@ export function doeHet(arg, { cwd = process.cwd() } = {}) {
     email ||= `${gebruiker}@users.noreply.github.com`;
     git(map, "add", "-A");
     if (git(map, "status", "--porcelain")) {
-      git(map, "-c", `user.name=${naam}`, "-c", `user.email=${email}`, "commit", "-q", "-m", "chore: projectnaam, reviewer, Worker-naam en databasestand invullen");
+      git(map, "-c", `user.name=${naam}`, "-c", `user.email=${email}`, "commit", "-q", "-m", "chore: projectnaam, reviewer en de namen van Worker, database en bestanden invullen");
     }
     git(map, "fetch", "-q", "origin");
     const tak = git(map, "rev-parse", "--abbrev-ref", "HEAD");
@@ -805,12 +742,11 @@ export function doeHet(arg, { cwd = process.cwd() } = {}) {
     repo,
     url: controle.plan.url,
     map,
-    database: arg.database,
     reviewer,
     hervat: hervatten,
     ruleset,
     omgevingen,
-    nogTeDoen: nogTeDoen({ database: arg.database, ruleset }),
+    nogTeDoen: nogTeDoen({ ruleset }),
   };
 }
 

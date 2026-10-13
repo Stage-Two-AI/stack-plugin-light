@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Het overzicht achter /stack-cloudflare:updaten: welke apps van de klant zijn uit de Stage Two-template
+ * Het overzicht achter /stack-light:updaten: welke apps van de klant zijn uit de Stage Two-template
  * gebouwd, op welke versie staan ze, en welke lopen achter?
  *
  *   node overzicht.mjs --json [--eigenaar <organisatie of account>]...
@@ -19,7 +19,7 @@
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isCloudflareManifest } from "../../../lib/manifest.mjs";
+import { isLightManifest } from "../../../lib/manifest.mjs";
 import {
   eersteRegel,
   ghAanwezig,
@@ -48,11 +48,11 @@ export function leesArgumenten(argv) {
   return uit;
 }
 
-/** De templateversie van een repo op GitHub, of null als hij niet uit de Cloudflare-template komt. */
+/** De templateversie van een repo op GitHub, of null als hij niet uit de light-template komt (variant "light"). */
 export function versieVanRepo(repo) {
   try {
     const manifest = JSON.parse(sh("gh", ["api", `repos/${repo}/contents/.claude/stack-manifest.json`, "-H", "Accept: application/vnd.github.raw"]));
-    if (!isCloudflareManifest(manifest)) return null;
+    if (!isLightManifest(manifest)) return null;
     const tekst = sh("gh", ["api", `repos/${repo}/contents/.claude/stack-version`, "-H", "Accept: application/vnd.github.raw"]);
     const n = Number.parseInt(tekst.trim(), 10);
     return Number.isSafeInteger(n) && n > 0 ? n : null;
@@ -78,8 +78,8 @@ function reposVan(eigenaar) {
 }
 
 export function overzicht({ cwd = process.cwd(), eigenaren = [], env = process.env } = {}) {
-  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-cloudflare:installatie" };
-  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-cloudflare:installatie)" };
+  if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-light:installatie" };
+  if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-light:installatie)" };
 
   const doel = versieOpAfstand(templateRepo(env));
   if (doel === null) return { status: "mislukt", reden: "de template is niet bereikbaar (geen netwerk, of nog geen versie-tag); probeer het later opnieuw" };

@@ -1,5 +1,5 @@
 /**
- * Tests voor de twee nieuwe scripts van /stack-cloudflare:updaten: het overzicht van alle apps van
+ * Tests voor de twee nieuwe scripts van /stack-light:updaten: het overzicht van alle apps van
  * de klant (overzicht.mjs) en de PR met afhankelijkheden (afhankelijkheden.mjs). Met een
  * nep-gh en een nep-pnpm op het PATH, dus zonder GitHub en zonder register.
  */
@@ -52,9 +52,9 @@ test("overzicht: argumenten", () => {
   assert.throws(() => leesArgumenten(["--eigenaar"]), /zonder naam/);
 });
 
-const CLOUDFLARE_MANIFEST = { variant: "cloudflare", stackVersion: 9 };
+const LIGHT_MANIFEST = { variant: "light", stackVersion: 9 };
 
-test("overzicht: alleen Cloudflare-template-apps met schrijfrecht (geen Vercel-apps), achterlopers eerst, open PR genoemd", () => {
+test("overzicht: alleen light-apps met schrijfrecht (geen Vercel- of Cloudflare + Supabase-apps), achterlopers eerst, open PR genoemd", () => {
   const w = overzichtWereld({
     "repo list": {
       stdout: [
@@ -64,18 +64,21 @@ test("overzicht: alleen Cloudflare-template-apps met schrijfrecht (geen Vercel-a
         { nameWithOwner: "klant/alleen-lezen", viewerPermission: "READ" },
         { nameWithOwner: "klant/nieuw", viewerPermission: "MAINTAIN" },
         { nameWithOwner: "klant/vercel-app", viewerPermission: "WRITE" },
+        { nameWithOwner: "klant/supabase-app", viewerPermission: "WRITE" },
       ],
     },
     "api repos/klant/voorraad/contents/.claude/stack-version": raw(9),
     "api repos/klant/portaal/contents/.claude/stack-version": raw(8),
     "api repos/klant/website/contents/.claude/stack-version": { exit: 1, stderr: "HTTP 404" },
     "api repos/klant/nieuw/contents/.claude/stack-version": raw(7),
-    "api repos/klant/voorraad/contents/.claude/stack-manifest.json": { stdout: CLOUDFLARE_MANIFEST },
-    "api repos/klant/portaal/contents/.claude/stack-manifest.json": { stdout: CLOUDFLARE_MANIFEST },
+    "api repos/klant/voorraad/contents/.claude/stack-manifest.json": { stdout: LIGHT_MANIFEST },
+    "api repos/klant/portaal/contents/.claude/stack-manifest.json": { stdout: LIGHT_MANIFEST },
     "api repos/klant/website/contents/.claude/stack-manifest.json": { exit: 1, stderr: "HTTP 404" },
-    "api repos/klant/nieuw/contents/.claude/stack-manifest.json": { stdout: CLOUDFLARE_MANIFEST },
+    "api repos/klant/nieuw/contents/.claude/stack-manifest.json": { stdout: LIGHT_MANIFEST },
     "api repos/klant/vercel-app/contents/.claude/stack-manifest.json": { stdout: { stackVersion: 6 } },
     "api repos/klant/vercel-app/contents/.claude/stack-version": raw(6),
+    "api repos/klant/supabase-app/contents/.claude/stack-manifest.json": { stdout: { variant: "cloudflare", stackVersion: 7 } },
+    "api repos/klant/supabase-app/contents/.claude/stack-version": raw(7),
     "pr list": { stdout: [{ number: 3, headRefName: "stack-sync/v9", url: "https://github.com/klant/portaal/pull/3" }] },
   });
   try {
@@ -183,7 +186,7 @@ test("afhankelijkheden: hoofdversies uit pnpm outdated, alleen echte sprongen", 
   const tekst = prTekst({ hoofdversies: uit, dependabot: [{ number: 26, title: "Bump de kleine updates", url: "u" }] });
   assert.match(tekst, /vite`: 6\.3\.1 → 7\.0\.2/);
   assert.match(tekst, /#26 Bump de kleine updates/);
-  assert.match(tekst, /\/stack-cloudflare:updaten/);
+  assert.match(tekst, /\/stack-light:updaten/);
 });
 
 test("afhankelijkheden: lockfile veranderd geeft een eigen PR met de naam van de gebruiker, main onaangeroerd", () => {

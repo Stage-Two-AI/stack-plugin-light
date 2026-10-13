@@ -31,13 +31,13 @@ test("geen bestand: wordt aangemaakt met precies de twee instellingen", () => {
     assert.equal(r.status, "gezet");
     assert.deepEqual(lees(map), {
       env: { FORCE_AUTOUPDATE_PLUGINS: "1" },
-      extraKnownMarketplaces: { "stagetwo-cloudflare": { source: BRON, autoUpdate: true } },
+      extraKnownMarketplaces: { "stagetwo-light": { source: BRON, autoUpdate: true } },
     });
     assert.equal(automatischBijwerken({ env }).status, "al-goed", "tweede keer: niets te doen");
   });
 });
 
-test("bestaand bestand: alles van de gebruiker blijft staan, ook de stagetwo-regel van het Vercel-spoor en een eigen stagetwo-cloudflare-regel", () => {
+test("bestaand bestand: alles van de gebruiker blijft staan, ook de stagetwo-regel van het Vercel-spoor en een eigen stagetwo-light-regel", () => {
   metMap((map, env) => {
     const voor = {
       theme: "dark",
@@ -46,21 +46,21 @@ test("bestaand bestand: alles van de gebruiker blijft staan, ook de stagetwo-reg
       extraKnownMarketplaces: {
         ander: { source: { source: "github", repo: "x/y" } },
         stagetwo: { source: { source: "github", repo: "Stage-Two-AI/stack-plugin" } },
-        "stagetwo-cloudflare": { source: { source: "git", url: "https://github.com/Stage-Two-AI/stack-plugin-cloudflare.git" } },
+        "stagetwo-light": { source: { source: "git", url: "https://github.com/Stage-Two-AI/stack-plugin-light.git" } },
       },
     };
     writeFileSync(join(map, "settings.json"), JSON.stringify(voor));
     const r = automatischBijwerken({ env });
     assert.equal(r.status, "gezet");
-    assert.deepEqual(r.gewijzigd, ["env.FORCE_AUTOUPDATE_PLUGINS", "extraKnownMarketplaces.stagetwo-cloudflare.autoUpdate"]);
+    assert.deepEqual(r.gewijzigd, ["env.FORCE_AUTOUPDATE_PLUGINS", "extraKnownMarketplaces.stagetwo-light.autoUpdate"]);
     const na = lees(map);
     assert.equal(na.theme, "dark");
     assert.deepEqual(na.env, { EIGEN: "ja", FORCE_AUTOUPDATE_PLUGINS: "1" });
     assert.deepEqual(na.enabledPlugins, voor.enabledPlugins);
     assert.deepEqual(na.extraKnownMarketplaces.ander, voor.extraKnownMarketplaces.ander);
     assert.deepEqual(na.extraKnownMarketplaces.stagetwo, voor.extraKnownMarketplaces.stagetwo, "het Vercel-spoor blijft onaangeroerd");
-    assert.deepEqual(na.extraKnownMarketplaces["stagetwo-cloudflare"], {
-      source: voor.extraKnownMarketplaces["stagetwo-cloudflare"].source,
+    assert.deepEqual(na.extraKnownMarketplaces["stagetwo-light"], {
+      source: voor.extraKnownMarketplaces["stagetwo-light"].source,
       autoUpdate: true,
     });
   });

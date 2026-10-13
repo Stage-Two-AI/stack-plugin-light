@@ -15,9 +15,10 @@
  *
  * Het script zet precies twee dingen en laat de rest van het bestand staan:
  *   env.FORCE_AUTOUPDATE_PLUGINS = "1"
- *   extraKnownMarketplaces.stagetwo-cloudflare = { source: github Stage-Two-AI/stack-plugin-cloudflare, autoUpdate: true }
- * Een bestaande stagetwo-cloudflare-regel (en een eventuele stagetwo-regel van het Vercel-spoor) houdt zijn eigen velden; alleen autoUpdate (en een
- * ontbrekende source) wordt aangevuld. Is het bestand geen geldige JSON, dan raakt het
+ *   extraKnownMarketplaces.stagetwo-light = { source: github Stage-Two-AI/stack-plugin-light, autoUpdate: true }
+ * Een bestaande stagetwo-light-regel houdt zijn eigen velden; alleen autoUpdate (en een
+ * ontbrekende source) wordt aangevuld. De regels van de andere sporen (stagetwo voor
+ * Vercel, stagetwo-cloudflare) blijven onaangeroerd. Is het bestand geen geldige JSON, dan raakt het
  * script het niet aan.
  *
  * Uitkomst: één JSON-object met `status`:
@@ -31,8 +32,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const MARKETPLACE = "stagetwo-cloudflare";
-export const BRON = { source: "github", repo: "Stage-Two-AI/stack-plugin-cloudflare" };
+export const MARKETPLACE = "stagetwo-light";
+export const BRON = { source: "github", repo: "Stage-Two-AI/stack-plugin-light" };
 
 export function instellingenPad(env = process.env) {
   // homedir() en niet $HOME: in Git Bash op Windows wijst $HOME soms ergens anders heen

@@ -66,8 +66,11 @@ echte gegevens raakt. Dat kost per app vrijwel niets.
   en bestanden inricht, en dan is de app van het bedrijf en niet van één persoon. Is er geen
   organisatie, zeg dan dat Stage Two die eerst moet aanmaken, en stop hier.
 - **Wie erbij mag.** Lees de groepen uit de toegangslijst:
-  `gh api repos/<beheer-repo>/contents/toegang.json -H "Accept: application/vnd.github.raw"`, met als beheer-repo `<eigenaar>/stagetwo-beheer-light` als die bestaat, anders `<eigenaar>/stagetwo-beheer`
-  (bestaat die niet, dan heet de beheer-repo nog `stack-beheer`: gebruik dan die naam).
+  `gh api repos/<beheer-repo>/contents/toegang.json -H "Accept: application/vnd.github.raw"`.
+  De beheer-repo is de repo van de organisatie met "beheer" in de naam en het bestand
+  `beheer/inrichten-light.mjs` (meestal `stagetwo-beheer`; `gh repo list <eigenaar> --json name -q '.[].name'`).
+  Zijn er meer, één per Cloudflare-account, vraag dan welke: de README van elke beheer-repo
+  zegt voor welk account en welke domeinen hij is. Onthoud de keuze voor stap 5b.
   Staat de naam van de app al onder `apps`, dan is dit al geregeld; zeg dat. Zo niet, toon
   dan de groepen (met wie erin zit, in gewone woorden) en laat de gebruiker kiezen. Zijn
   er geen groepen, dan maakt Stage Two die aan; ga gewoon door, stap 5b meldt het.
@@ -118,19 +121,21 @@ hier niet zelf aan.
 
 De Worker, de deur (Access), de databases (D1) en de bestanden (R2), voor productie en voor
 de previews, worden ingericht door de workflow **App inrichten** in de beheer-repo van de
-organisatie (`<eigenaar>/stagetwo-beheer-light` als de organisatie twee sporen heeft, anders `<eigenaar>/stagetwo-beheer`; het script kiest zelf en neemt alleen een beheer-repo van het lichte spoor), op
+organisatie (het script zoekt hem zelf en neemt alleen een beheer-repo van het lichte spoor), op
 GitHub. Daar staan alle sleutels; op deze computer komt bewust geen Cloudflare-toegang.
 Probeer dat nooit zelf te doen, ook niet als `wrangler` op deze computer staat.
 
 Draai:
 
 ```sh
-node "${CLAUDE_SKILL_DIR}/scripts/nieuwe-app.mjs" --json --inrichten --naam "<naam>" --eigenaar "<eigenaar>" [--groepen "<groep1>,<groep2>"]
+node "${CLAUDE_SKILL_DIR}/scripts/nieuwe-app.mjs" --json --inrichten --naam "<naam>" --eigenaar "<eigenaar>" [--groepen "<groep1>,<groep2>"] [--beheer "<beheer-repo>"]
 ```
 
 `--groepen` alleen als de app nog niet in de toegangslijst stond (stap 4). Zeg vooraf dat
 dit een paar minuten kan duren. Het antwoord:
 
+- `kies-beheer`: de organisatie heeft meer beheer-repo's (`beheerRepos`). Gebruik de keuze uit
+  stap 4, of vraag het nu, en draai opnieuw met `--beheer <naam zonder eigenaar>`.
 - `kies-groepen`: de app staat nog niet in de toegangslijst en er zijn geen groepen
   meegegeven. Toon `groepen`, laat kiezen, en draai opnieuw met `--groepen`. Is de lijst
   leeg, geef dan `reden` door: Stage Two maakt de groepen aan.

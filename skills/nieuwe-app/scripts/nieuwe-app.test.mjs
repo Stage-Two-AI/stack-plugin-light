@@ -18,6 +18,7 @@ import {
   hervatBesluit,
   installeer,
   kiesBeheerRepo,
+  lichteBeheerRepos,
   regelOmgevingen,
   voegAppToe,
   vulIn,
@@ -367,18 +368,30 @@ test("regelOmgevingen: maakt ontbrekende omgevingen aan en laat andere omgevinge
   assert.ok(!gh.log.some((r) => r.startsWith("DELETE repos/Org/app/environments/eigen-omgeving")));
 });
 
-test("kiesBeheerRepo: eerst stagetwo-beheer-light, dan stagetwo-beheer, dan stack-beheer; alleen een light-beheer-repo telt", () => {
-  const er = (...repos) => (r) => repos.includes(r);
+test("lichteBeheerRepos: zoekt op inhoud, niet op naam; alleen light-beheer-repo's tellen", () => {
+  const namen = () => ["app", "stagetwo-beheer", "stagetwo-beheer-light", "christijn-beheer-light", "beheer-notities"];
   const light = (...repos) => (r) => repos.includes(r);
-  // Stage Two zelf: twee sporen in één organisatie, de light-repo gaat voor.
-  assert.equal(
-    kiesBeheerRepo("org", er("org/stagetwo-beheer", "org/stagetwo-beheer-light"), light("org/stagetwo-beheer-light")),
-    "org/stagetwo-beheer-light",
+  assert.deepEqual(
+    lichteBeheerRepos("org", namen, light("org/stagetwo-beheer-light", "org/christijn-beheer-light")),
+    ["org/christijn-beheer-light", "org/stagetwo-beheer-light"],
   );
-  // Een light-klant met één beheer-repo.
-  assert.equal(kiesBeheerRepo("klant", er("klant/stagetwo-beheer"), light("klant/stagetwo-beheer")), "klant/stagetwo-beheer");
-  assert.equal(kiesBeheerRepo("klant", er("klant/stack-beheer"), light("klant/stack-beheer")), "klant/stack-beheer");
-  // Alleen een beheer-repo van het Cloudflare+Supabase-spoor: niet gebruiken.
-  assert.equal(kiesBeheerRepo("org", er("org/stagetwo-beheer"), light()), null);
-  assert.equal(kiesBeheerRepo("klant", () => false, () => true), null);
+  // Alleen een beheer-repo van het Cloudflare+Supabase-spoor: niets.
+  assert.deepEqual(lichteBeheerRepos("org", namen, light()), []);
+  // Een klant met de oude naam.
+  assert.deepEqual(lichteBeheerRepos("klant", () => ["stack-beheer"], () => true), ["klant/stack-beheer"]);
+});
+
+test("kiesBeheerRepo: één is vanzelf, meer is kiezen, een verkeerde keuze is een fout", () => {
+  assert.deepEqual(kiesBeheerRepo("klant", ["klant/stagetwo-beheer"]), { repo: "klant/stagetwo-beheer" });
+  assert.deepEqual(kiesBeheerRepo("klant", []), { repo: null });
+  const twee = ["org/christijn-beheer-light", "org/stagetwo-beheer-light"];
+  assert.deepEqual(kiesBeheerRepo("org", twee), { kies: twee });
+  assert.deepEqual(kiesBeheerRepo("org", twee, "stagetwo-beheer-light"), { repo: "org/stagetwo-beheer-light" });
+  assert.match(kiesBeheerRepo("org", twee, "stagetwo-beheer").fout, /geen beheer-repo van het lichte spoor/);
+});
+
+test("--beheer: alleen een repo-naam zonder eigenaar", () => {
+  const basis = ["--inrichten", "--naam", "app", "--eigenaar", "org"];
+  assert.equal(controleerArgumenten(leesArgumenten([...basis, "--beheer", "stagetwo-beheer-light"])), null);
+  assert.match(controleerArgumenten(leesArgumenten([...basis, "--beheer", "org/stagetwo-beheer"])), /zonder eigenaar/);
 });

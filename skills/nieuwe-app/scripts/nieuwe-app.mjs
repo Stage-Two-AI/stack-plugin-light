@@ -23,7 +23,7 @@
  *       met een pull request. Op de computer van de gebruiker komt bewust geen
  *       Cloudflare-toegang (GitHub blijft de enige poort).
  *
- *   node nieuwe-app.mjs --json --inrichten --naam <naam> --eigenaar <org> [--groepen a,b]
+ *   node nieuwe-app.mjs --json --inrichten --naam <naam> --eigenaar <org> [--groepen a,b] [--beheer <repo>]
  *       kijkt eerst of de app in toegang.json van <org>/stagetwo-beheer staat. Zo niet, dan
  *       opent het een pull request op stagetwo-beheer die hem toevoegt met de gekozen groepen
  *       (status `wacht-op-toegang`; de eigenaar keurt goed, daarna opnieuw draaien). Staat
@@ -72,6 +72,7 @@ export function leesArgumenten(argv) {
     omschrijving: null,
     map: null,
     groepen: null,
+    beheer: null,
   };
   const metWaarde = {
     "--naam": "naam",
@@ -79,6 +80,7 @@ export function leesArgumenten(argv) {
     "--omschrijving": "omschrijving",
     "--map": "map",
     "--groepen": "groepen",
+    "--beheer": "beheer",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -119,6 +121,9 @@ export function controleerArgumenten(arg) {
   if (arg.naam.length > 41) return "de naam mag hooguit 41 tekens lang zijn";
   if (arg.groepen && !arg.groepen.every((g) => /^[a-z0-9][a-z0-9-]{0,40}$/.test(g))) {
     return "--groepen: namen van groepen uit toegang.json, met komma's (kleine letters, cijfers, streepjes)";
+  }
+  if (arg.beheer !== null && arg.beheer !== undefined && !/^[a-z0-9][a-z0-9-]{0,99}$/.test(arg.beheer)) {
+    return "--beheer: de naam van de beheer-repo binnen de organisatie, zonder eigenaar (bijvoorbeeld stagetwo-beheer)";
   }
   return null;
 }
@@ -404,12 +409,11 @@ function isKloonVan(map, repo) {
 
 // ---------------------------------------------------------------- inrichten
 
-// De beheer-repo van een light-klant heet `stagetwo-beheer`. Heeft een organisatie twee sporen
-// (Stage Two zelf: de Cloudflare+Supabase-apps en de privé-apps), dan heet de light-repo
-// `stagetwo-beheer-light`; die gaat voor. `stack-beheer` is de oude naam (vóór 13-10-2026).
-export const BEHEER_REPO_LIGHT = "stagetwo-beheer-light";
-export const BEHEER_REPO = "stagetwo-beheer";
-export const BEHEER_REPO_OUD = "stack-beheer";
+// De beheer-repo van een light-klant heet `stagetwo-beheer` (vóór 13-10-2026 `stack-beheer`).
+// Een organisatie kan er meer hebben, één per Cloudflare-account (Stage Two zelf: de eigen
+// apps en de privé-apps in één organisatie). Het script zoekt daarom niet op naam maar op
+// inhoud: elke repo met "beheer" in de naam en de inrichting van het lichte spoor telt. Zijn
+// het er meer, dan kiest de gebruiker met --beheer.
 /** Aan dit bestand herken je een beheer-repo van het lichte spoor (uit stack-beheer, klant-light/). */
 export const LIGHT_KENMERK = "beheer/inrichten-light.mjs";
 
@@ -422,17 +426,41 @@ function heeftBestand(repo, pad) {
   }
 }
 
-/**
- * De light-beheer-repo van `eigenaar`, of null. Alleen een repo met de inrichting van het
- * lichte spoor telt: een beheer-repo van het Cloudflare+Supabase-spoor zou een Supabase-
- * project gaan maken.
- */
-export function kiesBeheerRepo(eigenaar, bestaat = repoBestaat, isLight = (r) => heeftBestand(r, LIGHT_KENMERK)) {
-  for (const naam of [BEHEER_REPO_LIGHT, BEHEER_REPO, BEHEER_REPO_OUD]) {
-    const repo = `${eigenaar}/${naam}`;
-    if (bestaat(repo) && isLight(repo)) return repo;
+function repoNamen(eigenaar) {
+  try {
+    return sh("gh", ["api", "--paginate", `orgs/${eigenaar}/repos`, "-q", ".[].name"]).split("\n").filter(Boolean);
+  } catch {
+    return [];
   }
-  return null;
+}
+
+/**
+ * Alle light-beheer-repo's van `eigenaar` (als eigenaar/naam). Alleen een repo met de
+ * inrichting van het lichte spoor telt: een beheer-repo van het Cloudflare+Supabase-spoor zou
+ * een Supabase-project gaan maken.
+ */
+export function lichteBeheerRepos(eigenaar, namen = repoNamen, isLight = (r) => heeftBestand(r, LIGHT_KENMERK)) {
+  return namen(eigenaar)
+    .filter((n) => /beheer/.test(n))
+    .sort()
+    .map((n) => `${eigenaar}/${n}`)
+    .filter((r) => isLight(r));
+}
+
+/**
+ * Welke beheer-repo: { repo } (of repo null als er geen is), { kies: [...] } als er meer zijn
+ * en niets gekozen is, of { fout } als de gekozen naam er niet tussen zit.
+ */
+export function kiesBeheerRepo(eigenaar, kandidaten, gekozen = null) {
+  if (gekozen) {
+    const repo = `${eigenaar}/${gekozen}`;
+    if (kandidaten.includes(repo)) return { repo };
+    return {
+      fout: `${repo} is geen beheer-repo van het lichte spoor; kies uit: ${kandidaten.join(", ") || "(geen)"}`,
+    };
+  }
+  if (kandidaten.length > 1) return { kies: kandidaten };
+  return { repo: kandidaten[0] ?? null };
 }
 export const BEHEER_WORKFLOW = "app-inrichten.yml";
 
@@ -534,11 +562,22 @@ export function richtIn(arg, { cwd = process.cwd(), wachtMs = 5000, maxWachtMinu
   if (!ghAanwezig()) return { status: "mislukt", reden: "de GitHub-opdrachtregel (gh) ontbreekt; draai eerst /stack-light:installatie" };
   if (!ghIngelogd()) return { status: "mislukt", reden: "log eerst in bij GitHub met `gh auth login` (zie /stack-light:installatie)" };
 
-  const beheer = isOrganisatie(arg.eigenaar) ? kiesBeheerRepo(arg.eigenaar) : null;
+  const keuze = isOrganisatie(arg.eigenaar)
+    ? kiesBeheerRepo(arg.eigenaar, lichteBeheerRepos(arg.eigenaar), arg.beheer)
+    : { repo: null };
+  if (keuze.fout) return { status: "mislukt", reden: keuze.fout };
+  if (keuze.kies) {
+    return {
+      status: "kies-beheer",
+      beheerRepos: keuze.kies,
+      reden: `${arg.eigenaar} heeft meer beheer-repo's, één per Cloudflare-account; kies er een en geef de naam mee met --beheer`,
+    };
+  }
+  const beheer = keuze.repo;
   if (!beheer) {
     return {
       status: "geen-beheer",
-      reden: `${arg.eigenaar} heeft geen beheer-repo (${arg.eigenaar}/${BEHEER_REPO}); Stage Two richt de hosting, de database en de bestanden in`,
+      reden: `${arg.eigenaar} heeft geen beheer-repo van het lichte spoor; Stage Two richt de hosting, de database en de bestanden in`,
     };
   }
   const repo = `${arg.eigenaar}/${arg.naam}`;
